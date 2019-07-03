@@ -5,12 +5,21 @@ import android.os.Bundle
 import com.zbx.cameralib.CameraManipulator
 
 class MainActivity : AppCompatActivity() {
+    var cameraManipulator: CameraManipulator? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+    }
 
-        var cameraManipulator = CameraManipulator(this, "0")
-        cameraManipulator.start()
+    override fun onResume() {
+        super.onResume()
+        cameraManipulator = CameraManipulator.Builder().setClientContext(this).build()
+        cameraManipulator?.start()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        cameraManipulator?.stop()
     }
 }

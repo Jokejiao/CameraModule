@@ -3,6 +3,7 @@ package com.zbx.cameralib
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Point
 import android.hardware.camera2.*
 import android.hardware.camera2.params.StreamConfigurationMap
 import android.media.ImageReader
@@ -10,9 +11,12 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.support.v4.content.ContextCompat
 import android.util.Log
+import android.util.Size
 import android.view.TextureView
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
+
+
 
 /**
  * An instance of CameraManipulator enables the client (the app uses this lib) to open a specific camera,
@@ -20,9 +24,7 @@ import java.util.concurrent.TimeUnit
  * @param context the Context of the client
  * @param cameraId the id of the camera the client is going to open
  */
-class CameraManipulator(private val context: Context, private val cameraId: String) {
-    private val TAG by lazy { CameraManipulator::class.java.simpleName }
-
+class CameraManipulator private constructor(builder: Builder){
     /** The TextureView the frame will render on. It is provided by the client */
     private var textureView: TextureView? = null
 
@@ -70,12 +72,40 @@ class CameraManipulator(private val context: Context, private val cameraId: Stri
     /** The stream configuration map of the camera */
     private var configMap: StreamConfigurationMap? = null
 
+    private var cameraCallback: CameraCallback? = null
+
+    /** The Android context of the client */
+    private var context: Context
+
+    /** The ID of the camera being manipulate */
+    private var cameraId: String
+
+    /** Some devices need to have an additional rotation */
+    private var additionalRotation: Int?
+
+    init {
+        context = builder.context!!
+        textureView = builder.textureView
+//        isMirror = builder.isMirror
+        cameraId = builder.cameraId
+        cameraCallback = builder.cameraCallback
+        frameDataCallback = builder.frameDataCallback
+        additionalRotation = builder.additionalRotation
+    }
+
     enum class FrameDataType {
         NV21   // Add more data types as needed
     }
 
     interface FrameDataCallback {
         fun onDataAvailable(frameData: ByteArray)
+    }
+
+    interface CameraCallback {
+        fun onCameraOpened(cameraId: String)
+        fun onCameraPreviewSize(cameraId: String, previewSize: Size)
+        fun onCameraClosed(cameraId: String)
+        fun onCameraError(cameraId: String, errorMsg: String)
     }
 
     fun start() {
@@ -93,11 +123,11 @@ class CameraManipulator(private val context: Context, private val cameraId: Stri
      * @return an integer indicates whether the opening is successful or
      * the failure cause
      */
-    private fun openCamera(): Int {
+    private fun openCamera() {
         val permission = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
         if (permission != PackageManager.PERMISSION_GRANTED) {
             Log.w(TAG, "Camera permission hasn't been granted")
-            return PERMISSION_NOT_GRANTED
+            cameraCallback?.onCameraError(cameraId, PERMISSION_NOT_GRANTED)
         }
 
         val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
@@ -108,31 +138,33 @@ class CameraManipulator(private val context: Context, private val cameraId: Stri
                 }
 
                 val characteristics = manager.getCameraCharacteristics(cid)
-                configMap = characteristics.get(
-                    CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP
-                ) ?: return CAMERA_CHARACTERISTIC_FAILED
+                configMap = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+                if (configMap == null) {
+                    cameraCallback?.onCameraError(cameraId, CAMERA_CHARACTERISTIC_FAILED)
+                    return
+                }
 
                 // Wait for camera to open - 2.5 seconds is sufficient
                 if (!cameraOpenCloseLock.tryAcquire(2500, TimeUnit.MILLISECONDS)) {
                     throw RuntimeException("Time out waiting to lock camera opening.")
                 }
-                manager.openCamera(cameraId, stateCallback, backgroundHandler)
 
                 Log.i(TAG, "Try opening the camera: $cameraId")
-                return TRY_OPENING
+                manager.openCamera(cameraId, stateCallback, backgroundHandler)
+                return
             }
         } catch (e: CameraAccessException) {
             Log.e(TAG, e.toString())
-            return CAMERA_ACCESS_EXCEPTION
+            cameraCallback?.onCameraError(cameraId, CAMERA_ACCESS_EXCEPTION)
         } catch (e: NullPointerException) {
             // Currently an NPE is thrown when the Camera2API is used but not supported on the
             // device this code runs.
             Log.e(TAG, e.toString())
-            return CAMERA_API_NOT_SUPPORTED
+            cameraCallback?.onCameraError(cameraId, CAMERA_API_NOT_SUPPORTED)
         }
 
         Log.e(TAG, "Camera ID is invalid")
-        return CAMERA_ID_INVALID
+        cameraCallback?.onCameraError(cameraId, CAMERA_ID_INVALID)
     }
 
     /**
@@ -217,6 +249,7 @@ class CameraManipulator(private val context: Context, private val cameraId: Stri
 
         override fun onOpened(cameraDevice: CameraDevice) {
             Log.i(TAG, "Camera opened: $cameraId")
+            cameraCallback?.onCameraOpened(cameraId)
             cameraOpenCloseLock.release()
             this@CameraManipulator.cameraDevice = cameraDevice
             goThroughInitialisation()
@@ -259,16 +292,71 @@ class CameraManipulator(private val context: Context, private val cameraId: Stri
 
     }
 
+    class Builder {
+        internal var context: Context? = null
+        internal var textureView: TextureView? = null
+        internal var isMirror = false
+        internal var cameraId: String = "0"
+        internal var cameraCallback: CameraCallback? = null
+        internal var frameDataCallback: FrameDataCallback? = null
+        internal var additionalRotation: Int = 0
+
+        fun setClientContext(context: Context): Builder {
+            this.context = context
+            return this
+        }
+
+        fun setPreviewOn(textureView: TextureView): Builder {
+            this.textureView = textureView
+            return this
+        }
+
+        fun isMirror(isMirror: Boolean): Builder {
+            this.isMirror = isMirror
+            return this
+        }
+
+        fun setCameraId(cameraId: String): Builder {
+            this.cameraId = cameraId
+            return this
+        }
+
+        fun setCameraCallback(cameraCallback: CameraCallback): Builder {
+            this.cameraCallback = cameraCallback
+            return this
+        }
+
+        fun setFrameDataCallback(frameDataCallback: FrameDataCallback): Builder {
+            this.frameDataCallback = frameDataCallback
+            return this
+        }
+
+        fun setAdditionalRotation(additionalRotation: Int): Builder {
+            this.additionalRotation = additionalRotation
+            return this
+        }
+
+        fun build(): CameraManipulator? {
+            if (context == null) {
+                Log.e(TAG, "Client must pass its Android Context")
+                return null
+            }
+
+            return CameraManipulator(this)
+        }
+    }
+
     companion object {
+        private val TAG by lazy { CameraManipulator::class.java.simpleName }
+
         /**
-         * Error codes of opening the camera
+         * Error message of opening the camera
          */
-        const val TRY_OPENING = 0  // No error occurred so far, trying to open the camera
-        const val PERMISSION_NOT_GRANTED = -1
-        const val CAMERA_ID_INVALID = -2
-        const val CAMERA_CHARACTERISTIC_FAILED = -3
-        const val CAMERA_ACCESS_EXCEPTION = -4
-        const val CAMERA_API_NOT_SUPPORTED = -5
+        const val PERMISSION_NOT_GRANTED = "Camera permission hasn't been granted"
+        const val CAMERA_ID_INVALID = "Camera ID is invalid"
+        const val CAMERA_CHARACTERISTIC_FAILED = "Failed to get camera characteristic"
+        const val CAMERA_ACCESS_EXCEPTION = "Camera access exception"
+        const val CAMERA_API_NOT_SUPPORTED = "Camera2 API is not supported on the device"
 
         private var THREAD_NUM = 0  // The sequence number of the background handler thread
     }
