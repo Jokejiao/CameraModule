@@ -10,16 +10,18 @@
     <com.zbx.cameralib.AutoFitTextureView
             android:id="@+id/textureview_rgb"
             android:layout_width="0dp" android:layout_height="0dp"
-            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintBottom_toTopOf="@id/textureview_ir"
             app:layout_constraintTop_toTopOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toStartOf="@id/textureview_ir"
-    />
+            app:layout_constraintEnd_toEndOf="parent"
+            android:layout_margin="0dp"
+            app:layout_constraintVertical_chainStyle="spread_inside"/>
     <com.zbx.cameralib.AutoFitTextureView
             android:id="@+id/textureview_ir"
             android:layout_width="0dp" android:layout_height="0dp"
             app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/textureview_rgb"
             app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toEndOf="@id/textureview_rgb"/>
+            app:layout_constraintStart_toStartOf="parent"
+            android:layout_margin="0dp"/>
 </android.support.constraint.ConstraintLayout>

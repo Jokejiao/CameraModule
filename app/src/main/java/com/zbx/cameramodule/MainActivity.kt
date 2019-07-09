@@ -54,8 +54,8 @@ class MainActivity : AppCompatActivity(), CameraManipulator.CameraCallback {
 //        cameraManipulator = CameraManipulator.Builder().setClientContext(this).build()
 
         cameraManipulator = CameraManipulator.Builder().setClientContext(this).setPreviewOn(textureView).
-            setCameraCallback(this).setRotation(windowManager.defaultDisplay.rotation).setCameraId(1).setAdditionalRotation(CameraManipulator.ROTATION_90).
-            setFlipOver(true).build()
+            setCameraCallback(this).setRotation(windowManager.defaultDisplay.rotation).setCameraId(1)/*.setAdditionalRotation(CameraManipulator.ROTATION_90).*/
+            /*setFlipOver(true).*/.build()
         cameraManipulator?.start()
     }
 

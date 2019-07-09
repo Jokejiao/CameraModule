@@ -101,6 +101,7 @@ class AutoFitTextureView @JvmOverloads constructor(
              * distorted as rendering on the new rect. In this way, calling matrix setRectToRect() and then
              * translate half of the extended length along the axis(inversely) can make the view displays
              * the central region of the camera image
+             * xTranslation and yTranslation always be minus or zero in this logic
              */
             val refWidth = height * ratioWidth / ratioHeight
             if (width < refWidth) {
@@ -110,8 +111,9 @@ class AutoFitTextureView @JvmOverloads constructor(
                 xTranslation = refWidth - width
             }
 
-            transformRoutine?.invoke(width, height)
+            // The onSurfaceTextureSizeChanged() won't be called since the dimension isn't changed
             setMeasuredDimension(width, height)
+            transformRoutine?.invoke(width, height)
             return
         }
 
