@@ -299,7 +299,9 @@ class CameraManipulator private constructor(builder: Builder){
         val centerX = viewRect.centerX()
         val centerY = viewRect.centerY()
 
-        if (Surface.ROTATION_90 == rotation || Surface.ROTATION_270 == rotation) {
+        // From the logic of AutoFitTextureView, xTranslation and yTranslation are invariably minus or zero
+        if (Surface.ROTATION_90 == rotation || Surface.ROTATION_270 == rotation
+            || (Surface.ROTATION_0 == rotation && additionalRotation != ROTATION_0)) {
             with(matrix) {
                 targetRect.let {
                     it.offset(centerX - it.centerX(), centerY - it.centerY())
@@ -326,38 +328,45 @@ class CameraManipulator private constructor(builder: Builder){
                     }
                 }
 
-                postRotate((90 * (rotation - 2)).toFloat(), centerX, centerY)
+                if (additionalRotation != ROTATION_0) {
+                    postRotate(additionalRotation.toFloat(), centerX, centerY)
+                } else {
+                    postRotate((90 * (rotation - 2)).toFloat(), centerX, centerY)
+                }
+
                 textureView?.setTransform(this)
                 return
             }
         }
 
-        targetRect = RectF(0f, 0f, viewWidth.toFloat(), viewHeight.toFloat())
-        if (xTranslation < 0) {
-            val refViewHeight = viewWidth * viewHeight / (viewWidth + xTranslation)
-            var offset = (refViewHeight - viewHeight) / 2
-            targetRect.apply {
-                top -= offset
-                bottom += offset
-                matrix.setRectToRect(viewRect, this, Matrix.ScaleToFit.FILL)
+        with(matrix) {
+            targetRect = RectF(0f, 0f, viewWidth.toFloat(), viewHeight.toFloat())
+            if (xTranslation < 0) {
+                val refViewHeight = viewWidth * viewHeight / (viewWidth + xTranslation)
+                var offset = (refViewHeight - viewHeight) / 2
+                targetRect.apply {
+                    top -= offset
+                    bottom += offset
+                    setRectToRect(viewRect, this, Matrix.ScaleToFit.FILL)
+                }
             }
-        }
 
-        if (yTranslation < 0) {
-            val refViewWidth = viewWidth * viewHeight / (viewHeight + yTranslation)
-            var offset = (refViewWidth - viewWidth) / 2
-            targetRect.apply {
-                left -= offset
-                right += offset
-                matrix.setRectToRect(viewRect, this, Matrix.ScaleToFit.FILL)
+            if (yTranslation < 0) {
+                val refViewWidth = viewWidth * viewHeight / (viewHeight + yTranslation)
+                var offset = (refViewWidth - viewWidth) / 2
+                targetRect.apply {
+                    left -= offset
+                    right += offset
+                    setRectToRect(viewRect, this, Matrix.ScaleToFit.FILL)
+                }
             }
-        }
 
-        if (Surface.ROTATION_180 == rotation ) {
-            matrix.postRotate(180f, centerX, centerY)
-        }
+            if (Surface.ROTATION_180 == rotation) {
+                postRotate(180f, centerX, centerY)
+            }
 
-        textureView?.setTransform(matrix)
+            textureView?.setTransform(this)
+        }
     }
 
     /**

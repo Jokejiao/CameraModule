@@ -14,6 +14,9 @@ import com.zbx.cameralib.AutoFitTextureView
 import com.zbx.cameralib.CameraManipulator
 
 class MainActivity : AppCompatActivity(), CameraManipulator.CameraCallback {
+    private var cameraManipulator: CameraManipulator? = null
+    private lateinit var textureView: AutoFitTextureView
+
     override fun onCameraOpened(cameraId: String) {
     }
 
@@ -29,40 +32,25 @@ class MainActivity : AppCompatActivity(), CameraManipulator.CameraCallback {
         }
     }
 
-    private var cameraManipulator: CameraManipulator? = null
-    private var cameraManipulator2: CameraManipulator? = null
-    private lateinit var textureView: AutoFitTextureView
-    private lateinit var textureView2: AutoFitTextureView
-    private lateinit var button: Button
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
         textureView = findViewById(R.id.view_preview)
-//        textureView2 = findViewById(R.id.view_preview2)
-//        findViewById<Button>(R.id.button).setOnClickListener {
-//            cameraManipulator2 =
-//                CameraManipulator.Builder().setClientContext(this).setPreviewOn(textureView2).setCameraId(1).build()
-//            cameraManipulator2?.start()
-////            cameraManipulator?.setPreviewOn(textureView) }
-//        }
     }
 
     override fun onResume() {
         super.onResume()
-//        cameraManipulator = CameraManipulator.Builder().setClientContext(this).build()
-
-        cameraManipulator = CameraManipulator.Builder().setClientContext(this).setPreviewOn(textureView).
-            setCameraCallback(this).setRotation(windowManager.defaultDisplay.rotation).setCameraId(1)/*.setAdditionalRotation(CameraManipulator.ROTATION_90).*/
-            /*setFlipOver(true).*/.build()
+        cameraManipulator =
+            CameraManipulator.Builder().setClientContext(this).setPreviewOn(textureView).setCameraCallback(this)
+                .setRotation(windowManager.defaultDisplay.rotation).setCameraId(1)
+                .setAdditionalRotation(CameraManipulator.ROTATION_90).setFlipOver(true).build()
         cameraManipulator?.start()
     }
 
     override fun onPause() {
         super.onPause()
         cameraManipulator?.stop()
-//        cameraManipulator2?.stop()
     }
 
     private fun requestCameraPermission() {

@@ -23,19 +23,20 @@ class DualCameraActivity : AppCompatActivity() {
         super.onResume()
 
         cameraManipulatorRgb = CameraManipulator.Builder().setClientContext(this).setPreviewOn(textureViewRgb)
-            .setRotation(windowManager.defaultDisplay.rotation).setCameraId(1)./*setAdditionalRotation(
+            .setRotation(windowManager.defaultDisplay.rotation).setCameraId(1).setAdditionalRotation(
                 CameraManipulator.ROTATION_90
-            ).*//*setFlipOver(true).*/build()
+            ).setFlipOver(true).build()
         cameraManipulatorRgb?.start()
 
-//        cameraManipulatorIr = CameraManipulator.Builder().setClientContext(this).setPreviewOn(textureViewIr)
-//            .setRotation(windowManager.defaultDisplay.rotation).setCameraId(0).build()
-//        cameraManipulatorIr?.start()
+        cameraManipulatorIr = CameraManipulator.Builder().setClientContext(this).setPreviewOn(textureViewIr)
+            .setRotation(windowManager.defaultDisplay.rotation).setAdditionalRotation(CameraManipulator.ROTATION_270)
+            .setCameraId(0).build()
+        cameraManipulatorIr?.start()
     }
 
     override fun onPause() {
         super.onPause()
         cameraManipulatorRgb?.stop()
-//        cameraManipulatorIr?.stop()
+        cameraManipulatorIr?.stop()
     }
 }
