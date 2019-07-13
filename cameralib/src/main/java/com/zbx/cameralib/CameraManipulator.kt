@@ -344,6 +344,33 @@ class CameraManipulator private constructor(builder: Builder){
     }
 
     /**
+     * Get a list of sizes compatible with SurfaceTexture to use as an output.
+     */
+    fun getSupportedOutputSizes(): Array<Size>? {
+        val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+        try {
+            val characteristics = manager.getCameraCharacteristics(cameraId)
+            val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+            if (map == null) {
+                cameraCallback?.onCameraError(cameraId, CAMERA_CHARACTERISTIC_FAILED)
+                return null
+            }
+
+            return map.getOutputSizes(SurfaceTexture::class.java)
+        } catch (e: CameraAccessException) {
+            Log.e(TAG, e.toString())
+            cameraCallback?.onCameraError(cameraId, CAMERA_ACCESS_EXCEPTION)
+        } catch (e: NullPointerException) {
+            // Currently an NPE is thrown when the Camera2API is used but not supported on the
+            // device this code runs.
+            Log.e(TAG, e.toString())
+            cameraCallback?.onCameraError(cameraId, CAMERA_API_NOT_SUPPORTED)
+        }
+
+        return null
+    }
+
+    /**
      * Sets up member variables related to camera.
      *
      * @param width  The width of available size for camera preview
@@ -353,11 +380,6 @@ class CameraManipulator private constructor(builder: Builder){
         val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
         try {
             val characteristics = manager.getCameraCharacteristics(cameraId)
-            val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
-            if (map == null) {
-                cameraCallback?.onCameraError(cameraId, CAMERA_CHARACTERISTIC_FAILED)
-                return
-            }
 
             // Find out if we need to swap dimension to get the preview size relative to sensor
             // coordinate.
@@ -366,11 +388,13 @@ class CameraManipulator private constructor(builder: Builder){
             val rotatedPreviewWidth = if (swappedDimensions) height else width
             val rotatedPreviewHeight = if (swappedDimensions) width else height
 
+            val outputSizes = getSupportedOutputSizes()
+            if (outputSizes.isNullOrEmpty()) return
             // Danger, W.R.! Attempting to use too large a preview size could exceed the camera
             // bus' bandwidth limitation, resulting in gorgeous previews but the storage of
             // garbage capture data.
             previewSize = chooseOptimalSize(
-                map.getOutputSizes(SurfaceTexture::class.java),
+                outputSizes,
                 rotatedPreviewWidth, rotatedPreviewHeight,
                 additionalRotation, specificPreviewSize
             )
