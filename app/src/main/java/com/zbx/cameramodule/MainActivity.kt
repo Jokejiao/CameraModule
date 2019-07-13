@@ -61,7 +61,8 @@ class MainActivity : AppCompatActivity(), CameraManipulator.CameraCallback, View
     }
 
     override fun onDataAvailable(frameData: ByteArray?) {
-        frameTextView.text = "Frame: ${++frameCount}"
+        frameData ?: return
+        if (frameData?.isNotEmpty()) frameTextView.text = "Frame: ${++frameCount}"
     }
 
     override fun onClick(v: View?) {

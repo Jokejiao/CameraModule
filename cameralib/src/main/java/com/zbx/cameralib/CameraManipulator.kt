@@ -303,15 +303,21 @@ class CameraManipulator private constructor(builder: Builder){
     }
 
     /**
-     * This a callback object for the [ImageReader]. "onImageAvailable" will be called when a
+     * This is a callback object for the [ImageReader]. "onImageAvailable" will be called when a
      * still image is ready to be saved.
      */
     private val onImageAvailableListener = ImageReader.OnImageAvailableListener {
         val image = it.acquireLatestImage()
-        image?.close()
-//        val dataFromImage = DataUtils.getDataFromImage(image, DataUtils.COLOR_FormatNV21)
-        frameDataCallback?.onDataAvailable()
-//        backgroundHandler?.post(ImageSaver(it.acquireNextImage(), file))
+        image ?: return@OnImageAvailableListener  // Take place at Capture Session recreation
+
+        // At the stage, only NV21 is supported
+        if (frameDataType == FrameDataType.NV21) {
+            // This conversion takes roughly 1-2 ms on HuaWei Note10 with a 320*240 image
+            val dataFromImage = DataUtils.getDataFromImage(image, DataUtils.COLOR_FormatNV21)
+            frameDataCallback?.onDataAvailable(dataFromImage)
+        }
+
+        image.close()
     }
 
     /**
