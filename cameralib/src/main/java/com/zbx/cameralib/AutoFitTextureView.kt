@@ -22,6 +22,7 @@ import android.util.Log
 import android.view.TextureView
 
 /**
+ * Author: Ke Jiao (Alex)
  * A [TextureView] that can be adjusted to a specified aspect ratio.
  */
 class AutoFitTextureView @JvmOverloads constructor(
@@ -45,7 +46,7 @@ class AutoFitTextureView @JvmOverloads constructor(
     fun getXTranslation() = xTranslation
     fun getYTranslation() = yTranslation
 
-    fun setTransformRoutine(routine: (Int, Int) -> Unit) {
+    fun setTransformRoutine(routine: ((Int, Int) -> Unit)?) {
         this.transformRoutine = routine
     }
 

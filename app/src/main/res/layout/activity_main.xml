@@ -6,28 +6,37 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         tools:context=".MainActivity">
+
     <com.zbx.cameralib.AutoFitTextureView
             android:id="@+id/view_preview" android:layout_width="0dp" android:layout_height="0dp"
             app:layout_constraintTop_toTopOf="parent"
             android:layout_marginTop="0dp"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintBottom_toTopOf="@id/button_ringIn"/>
+            app:layout_constraintBottom_toTopOf="@id/button_preview"/>
     <Button
-            android:text="Ring In"
+            android:text="@string/start_preview"
             android:layout_width="0dp"
             android:layout_height="150dp"
-            android:id="@+id/button_ringIn" app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintHorizontal_bias="0.5" app:layout_constraintEnd_toStartOf="@+id/button_ringOut"
+            android:id="@+id/button_preview" app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintHorizontal_bias="0.5" app:layout_constraintEnd_toStartOf="@+id/button_frame"
             app:layout_constraintHorizontal_chainStyle="spread_inside"
             app:layout_constraintBottom_toBottomOf="parent"/>
     <Button
-            android:text="Ring Out"
+            android:text="@string/start_frame"
             android:layout_width="0dp"
             android:layout_height="150dp"
-            android:id="@+id/button_ringOut"
-            app:layout_constraintStart_toEndOf="@+id/button_ringIn" app:layout_constraintHorizontal_bias="0.5"
+            android:id="@+id/button_frame"
+            app:layout_constraintStart_toEndOf="@+id/button_preview" app:layout_constraintHorizontal_bias="0.5"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintBottom_toBottomOf="parent"/>
+    <TextView
+            android:id="@+id/textview_frame"
+            tools:text="Frame "
+            android:textColor="@android:color/holo_orange_light"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"/>
 
 </android.support.constraint.ConstraintLayout>
