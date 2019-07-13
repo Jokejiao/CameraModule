@@ -26,6 +26,8 @@ import kotlin.reflect.KProperty
  * Author: Ke Jiao (Alex)
  * An instance of CameraManipulator enables the client (the app uses this lib) to open a specific camera,
  * render the preview frame on a TextureView, and obtain frame data
+ * Note that frame catching causes frequent GC while preview gives rise to an increasing native heap
+ * allocation(Yet can be GCed eventually). So far, no memory leak has detected
  * @param builder the builder object of the manipulator
  */
 class CameraManipulator private constructor(builder: Builder){
@@ -234,12 +236,10 @@ class CameraManipulator private constructor(builder: Builder){
             if (!sessionSurfaceList.contains(new)) {
                 sessionSurfaceList.add(new)
             }
-        } else if (old != null && new == null) {
-            Log.d(TAG, "$prop.name surface is removed")
+        } else if (old != null) {
             sessionSurfaceList.remove(old)
-        } else if (old != null && new != null) {
-            sessionSurfaceList.remove(old)
-            sessionSurfaceList.add(new)
+            old.release()
+            if (new == null) Log.d(TAG, "$prop.name surface is removed") else  sessionSurfaceList.add(new)
         }
 
         // Abort the CaptureSession if there's no surface

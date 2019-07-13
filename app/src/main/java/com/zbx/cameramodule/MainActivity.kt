@@ -20,7 +20,6 @@ import com.zbx.cameralib.CameraManipulator
 
 class MainActivity : AppCompatActivity(), CameraManipulator.CameraCallback, View.OnClickListener,
     CameraManipulator.FrameDataCallback {
-
     private var cameraManipulator: CameraManipulator? = null
     private lateinit var textureView: AutoFitTextureView
     private lateinit var btnPreview: Button
@@ -97,7 +96,7 @@ class MainActivity : AppCompatActivity(), CameraManipulator.CameraCallback, View
         handler.postDelayed({
             btnFrame.isEnabled = true
             btnPreview.isEnabled = true
-        }, 1000L)
+        }, THROTTLE_DELAY)
     }
 
     override fun onResume() {
@@ -107,6 +106,12 @@ class MainActivity : AppCompatActivity(), CameraManipulator.CameraCallback, View
                 .setRotation(windowManager.defaultDisplay.rotation).setCameraId(1)
                 /*.setAdditionalRotation(CameraManipulator.ROTATION_90).setFlipOver(true)*/.build()
         cameraManipulator?.start()
+
+        // The camera had been stopped at onPause(), thus reset the states
+        previewStarted = false
+        frameStarted = false
+        btnPreview.text = resources.getText(R.string.start_preview)
+        btnFrame.text = resources.getText(R.string.start_frame)
     }
 
     override fun onPause() {
@@ -139,5 +144,6 @@ class MainActivity : AppCompatActivity(), CameraManipulator.CameraCallback, View
 
     companion object {
         private const val FRAGMENT_DIALOG = "dialog"
+        private const val THROTTLE_DELAY = 1000L
     }
 }
