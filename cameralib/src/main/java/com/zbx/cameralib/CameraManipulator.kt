@@ -30,7 +30,7 @@ import kotlin.reflect.KProperty
  * allocation(Yet can be GCed eventually). So far, no memory leak has detected
  * @param builder the builder object of the manipulator
  */
-class CameraManipulator private constructor(builder: Builder){
+class CameraManipulator private constructor(builder: Builder) {
     /** The TextureView the frame will be rendered on. It is provided by the client */
     private var textureView: AutoFitTextureView? = null
 
@@ -90,6 +90,9 @@ class CameraManipulator private constructor(builder: Builder){
     /** Flip the image over horizontally */
     private var flipOver = false
 
+    /** True for displaying the central region of the image, false for displaying the entire image  */
+    private var neverDistorted = true
+
     /** The textureView surface for preview */
     private var viewSurface: Surface? by Delegates.observable(null, ::surfaceChangeHandler)
 
@@ -97,21 +100,21 @@ class CameraManipulator private constructor(builder: Builder){
     private var readerSurface: Surface? by Delegates.observable(null, ::surfaceChangeHandler)
 
     /** Take down the surface list of the CaptureSession. The session can be reused if
-       it already contains all surfaces required as output (Just add/remove the CaptureRequest's target(s) and
-       renew the request by invoking setRepeatingRequest) */
+    it already contains all surfaces required as output (Just add/remove the CaptureRequest's target(s) and
+    renew the request by invoking setRepeatingRequest) */
     private val sessionSurfaceList = mutableListOf<Surface>()
     private val currentSessionSurfaceList = mutableListOf<Surface>()
 
     /** Throttle the creation of CaptureSession, since it is asynchronous. A quickly repeat recreation may cause
-        a closed session being configured and throw IllegalStateException */
+    a closed session being configured and throw IllegalStateException */
     @Volatile
     private var sessionCreationInProgress = false
 
     init {
         context = builder.context!!
         textureView = builder.textureView
-        textureView?.setTransformRoutine {
-            width, height -> configureTransform(width, height)
+        textureView?.setTransformRoutine { width, height ->
+            configureTransform(width, height)
         }
         flipOver = builder.flipOver
         if (flipOver) textureView?.scaleX = -1f
@@ -121,6 +124,7 @@ class CameraManipulator private constructor(builder: Builder){
         rotation = builder.rotation
         additionalRotation = builder.additionalRotation
         specificPreviewSize = builder.specificPreviewSize
+        neverDistorted = builder.neverDistorted
     }
 
     enum class FrameDataType {
@@ -239,12 +243,12 @@ class CameraManipulator private constructor(builder: Builder){
         } else if (old != null) {
             sessionSurfaceList.remove(old)
             old.release()
-            if (new == null) Log.d(TAG, "$prop.name surface is removed") else  sessionSurfaceList.add(new)
+            if (new == null) Log.d(TAG, "$prop.name surface is removed") else sessionSurfaceList.add(new)
         }
 
         // Abort the CaptureSession if there's no surface
         // As per the doc, don't close the session for more efficient reuse
-        if  (viewSurface == null && readerSurface == null) {
+        if (viewSurface == null && readerSurface == null) {
             captureSession?.abortCaptures()
             return
         }
@@ -253,8 +257,10 @@ class CameraManipulator private constructor(builder: Builder){
             // reset repeating request
             Log.d(TAG, "reset repeating request")
             val previewRequest = previewRequestBuilder.build()
-            captureSession?.setRepeatingRequest(previewRequest,
-                null, backgroundHandler)
+            captureSession?.setRepeatingRequest(
+                previewRequest,
+                null, backgroundHandler
+            )
         } else {
             // recreate capture session
             Log.d(TAG, "recreate capture session")
@@ -283,8 +289,10 @@ class CameraManipulator private constructor(builder: Builder){
                             try {
                                 // Finally, we start displaying the camera preview.
                                 val previewRequest = previewRequestBuilder.build()
-                                captureSession?.setRepeatingRequest(previewRequest,
-                                    null, backgroundHandler)
+                                captureSession?.setRepeatingRequest(
+                                    previewRequest,
+                                    null, backgroundHandler
+                                )
                             } catch (e: CameraAccessException) {
                                 Log.e(TAG, e.toString())
                             }
@@ -295,7 +303,8 @@ class CameraManipulator private constructor(builder: Builder){
                             sessionCreationInProgress = false
                             cameraCallback?.onCameraError(cameraId, CAMERA_CONFIG_FAILED)
                         }
-                    }, null)
+                    }, null
+                )
             } catch (e: CameraAccessException) {
                 Log.e(TAG, e.toString())
             }
@@ -438,21 +447,55 @@ class CameraManipulator private constructor(builder: Builder){
         val centerX = viewRect.centerX()
         val centerY = viewRect.centerY()
 
+        val totalRotation = rotationMap.getValue(rotation).plus(additionalRotation)
+
+        // Two different transformational strategies in terms of the rotation.
         // From the logic of AutoFitTextureView, xTranslation and yTranslation are invariably minus or zero
-        if (Surface.ROTATION_90 == rotation || Surface.ROTATION_270 == rotation
-            || (Surface.ROTATION_0 == rotation && additionalRotation != ROTATION_0)) {
+        if (totalRotation % 180 != 0) {
             with(matrix) {
                 targetRect.let {
                     it.offset(centerX - it.centerX(), centerY - it.centerY())
                     setRectToRect(viewRect, it, Matrix.ScaleToFit.FILL)
                 }
 
+                if (neverDistorted) {
+                    if (xTranslation < 0) {
+                        val refViewHeight = viewWidth * viewHeight / (viewWidth + xTranslation)
+                        var offset = (refViewHeight - viewHeight) / 2
+                        targetRect.apply {
+                            left -= offset
+                            right += offset
+                            setRectToRect(viewRect, this, Matrix.ScaleToFit.FILL)
+                        }
+                    }
+
+                    if (yTranslation < 0) {
+                        val refViewWidth = viewWidth * viewHeight / (viewHeight + yTranslation)
+                        var offset = (refViewWidth - viewWidth) / 2
+                        targetRect.apply {
+                            top -= offset
+                            bottom += offset
+                            setRectToRect(viewRect, this, Matrix.ScaleToFit.FILL)
+                        }
+                    }
+                }
+
+                postRotate(totalRotation.toFloat(), centerX, centerY)
+                textureView?.setTransform(this)
+                return
+            }
+        }
+
+        with(matrix) {
+            if (neverDistorted) {
+                targetRect = RectF(0f, 0f, viewWidth.toFloat(), viewHeight.toFloat())
+
                 if (xTranslation < 0) {
                     val refViewHeight = viewWidth * viewHeight / (viewWidth + xTranslation)
                     var offset = (refViewHeight - viewHeight) / 2
                     targetRect.apply {
-                        left -= offset
-                        right += offset
+                        top -= offset
+                        bottom += offset
                         setRectToRect(viewRect, this, Matrix.ScaleToFit.FILL)
                     }
                 }
@@ -461,49 +504,14 @@ class CameraManipulator private constructor(builder: Builder){
                     val refViewWidth = viewWidth * viewHeight / (viewHeight + yTranslation)
                     var offset = (refViewWidth - viewWidth) / 2
                     targetRect.apply {
-                        top -= offset
-                        bottom += offset
+                        left -= offset
+                        right += offset
                         setRectToRect(viewRect, this, Matrix.ScaleToFit.FILL)
                     }
                 }
-
-                if (additionalRotation != ROTATION_0) {
-                    postRotate(additionalRotation.toFloat(), centerX, centerY)
-                } else {
-                    postRotate((90 * (rotation - 2)).toFloat(), centerX, centerY)
-                }
-
-                textureView?.setTransform(this)
-                return
-            }
-        }
-
-        with(matrix) {
-            targetRect = RectF(0f, 0f, viewWidth.toFloat(), viewHeight.toFloat())
-            if (xTranslation < 0) {
-                val refViewHeight = viewWidth * viewHeight / (viewWidth + xTranslation)
-                var offset = (refViewHeight - viewHeight) / 2
-                targetRect.apply {
-                    top -= offset
-                    bottom += offset
-                    setRectToRect(viewRect, this, Matrix.ScaleToFit.FILL)
-                }
             }
 
-            if (yTranslation < 0) {
-                val refViewWidth = viewWidth * viewHeight / (viewHeight + yTranslation)
-                var offset = (refViewWidth - viewWidth) / 2
-                targetRect.apply {
-                    left -= offset
-                    right += offset
-                    setRectToRect(viewRect, this, Matrix.ScaleToFit.FILL)
-                }
-            }
-
-            if (Surface.ROTATION_180 == rotation) {
-                postRotate(180f, centerX, centerY)
-            }
-
+            postRotate(totalRotation.toFloat(), centerX, centerY)
             textureView?.setTransform(this)
         }
     }
@@ -560,8 +568,8 @@ class CameraManipulator private constructor(builder: Builder){
 
             this.textureView = textureView
             if (flipOver) this.textureView?.scaleX = -1f // set the flip-over
-            textureView.setTransformRoutine {
-                    width, height -> configureTransform(width, height)
+            textureView.setTransformRoutine { width, height ->
+                configureTransform(width, height)
             }
 
             // Start the preview
@@ -649,8 +657,10 @@ class CameraManipulator private constructor(builder: Builder){
                 CameraDevice.TEMPLATE_PREVIEW
             )
             // Auto focus should be continuous for camera preview.
-            previewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE,
-                CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
+            previewRequestBuilder.set(
+                CaptureRequest.CONTROL_AF_MODE,
+                CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE
+            )
 
             setPreviewAndFrame()
         }
@@ -700,8 +710,11 @@ class CameraManipulator private constructor(builder: Builder){
         internal var cameraCallback: CameraCallback? = null
         internal var frameDataCallback: FrameDataCallback? = null
         internal var rotation: Int = 0
+        /** Additional rotation is for calibrating some non-standard devices(Camera sensor isn't right).
+         *  The Never-distorted cannot be guaranteed if rotate on a standard device */
         internal var additionalRotation = ROTATION_0
         internal var specificPreviewSize: Point? = null
+        internal var neverDistorted = true
 
         fun setClientContext(context: Context): Builder {
             this.context = context
@@ -748,6 +761,11 @@ class CameraManipulator private constructor(builder: Builder){
             return this
         }
 
+        fun setNeverDistorted(neverDistorted: Boolean): Builder {
+            this.neverDistorted = neverDistorted
+            return this
+        }
+
         fun build(): CameraManipulator? {
             if (context == null) {
                 Log.e(TAG, "Client must pass its Android Context")
@@ -778,10 +796,10 @@ class CameraManipulator private constructor(builder: Builder){
         private const val MAX_PREVIEW_HEIGHT = 1080
 
         /** The upper and lower limits with regard to:
-          * The camera preview area divides the TextureView area
-          * Using a much higher preview resolution than the view's is a waste of resources.
-          * Using too low resolution would have an unsatisfactory display effect
-          */
+         * The camera preview area divides the TextureView area
+         * Using a much higher preview resolution than the view's is a waste of resources.
+         * Using too low resolution would have an unsatisfactory display effect
+         */
         private const val UPPER_AREA_RATIO = 1.5F
         private const val LOWER_AREA_RATIO = 0.75F
 
@@ -792,6 +810,13 @@ class CameraManipulator private constructor(builder: Builder){
         const val ROTATION_90 = 90
         const val ROTATION_180 = 180
         const val ROTATION_270 = 270
+
+        /** For the calculation of transformation.
+         * Key is the screen rotation, value is the additional degree the image has to rotate to be upright */
+        val rotationMap = mapOf(
+            Surface.ROTATION_0 to ROTATION_0, Surface.ROTATION_90 to ROTATION_270,
+            Surface.ROTATION_180 to ROTATION_180, Surface.ROTATION_270 to ROTATION_90
+        )
 
         /** As per Android doc, it should be greater than 1 */
         const val IMAGE_READER_MAX_IMAGE = 2
@@ -809,7 +834,8 @@ class CameraManipulator private constructor(builder: Builder){
          * @param textureViewHeight The height of the texture view relative to sensor coordinate
          * @return The optimal `Size`, or an arbitrary one if none were big enough
          */
-        @JvmStatic private fun chooseOptimalSize(
+        @JvmStatic
+        private fun chooseOptimalSize(
             choices: Array<Size>,
             textureViewWidth: Int,
             textureViewHeight: Int,
@@ -841,18 +867,21 @@ class CameraManipulator private constructor(builder: Builder){
             for (size in choices) {
                 // The client had specified its favorite preview size, just use it if it is supported
                 if (specificPreviewSize != null && specificPreviewSize.x == size.width
-                    && specificPreviewSize.y == size.height) {
+                    && specificPreviewSize.y == size.height
+                ) {
                     return size
                 }
 
                 if (isNormalRotate) {
                     if (filterPreviewSize(size) && (abs(size.height / size.width.toFloat() - previewViewRatio)
-                        < abs(bestSize.height / bestSize.width.toFloat() - previewViewRatio))) {
+                                < abs(bestSize.height / bestSize.width.toFloat() - previewViewRatio))
+                    ) {
                         bestSize = size
                     }
                 } else {
                     if (filterPreviewSize(size) && (abs(size.width / size.height.toFloat() - previewViewRatio)
-                        < abs(bestSize.width / bestSize.height.toFloat() - previewViewRatio))) {
+                                < abs(bestSize.width / bestSize.height.toFloat() - previewViewRatio))
+                    ) {
                         bestSize = size
                     }
                 }
