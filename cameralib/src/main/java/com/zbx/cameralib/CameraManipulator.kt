@@ -77,7 +77,10 @@ class CameraManipulator private constructor(builder: Builder) {
     private var sensorOrientation: Int? = 0
 
     /** A specific preview size the client wants to have */
-    private var specificPreviewSize: Point? = null
+    private var specificPreviewSize: Size? = null
+
+    /** A specific frame size the client wants to have */
+    private var frameSize: Size = DEFAULT_FRAME_SIZE
 
     /** The [android.util.Size] of camera preview. */
     private lateinit var previewSize: Size
@@ -122,6 +125,7 @@ class CameraManipulator private constructor(builder: Builder) {
         rotation = builder.rotation
         additionalRotation = builder.additionalRotation
         specificPreviewSize = builder.specificPreviewSize
+        frameSize = builder.frameSize
         neverDistorted = builder.neverDistorted
     }
 
@@ -431,6 +435,7 @@ class CameraManipulator private constructor(builder: Builder) {
      * Configures the necessary [android.graphics.Matrix] transformation to `textureView`.
      * This method should be called after the camera preview size is determined in
      * setUpCameraOutputs and also the size of `textureView` is fixed.
+     * Be mindful of the image correctness depends on the gravity sensor
      *
      * @param viewWidth  The width of `textureView`
      * @param viewHeight The height of `textureView`
@@ -624,7 +629,7 @@ class CameraManipulator private constructor(builder: Builder) {
             frameDataCallback = callback
             // Create the image reader
             imageReader = ImageReader.newInstance(
-                320/*largest.width*/, 240/*largest.height*/,
+                frameSize.width, frameSize.height,
                 ImageFormat.YUV_420_888, IMAGE_READER_MAX_IMAGE
             ).apply {
                 setOnImageAvailableListener(onImageAvailableListener, backgroundHandler)
@@ -714,7 +719,8 @@ class CameraManipulator private constructor(builder: Builder) {
         /** Additional rotation is for calibrating some non-standard devices(Camera sensor isn't right).
          *  The Never-distorted cannot be guaranteed if rotate on a standard device */
         internal var additionalRotation = ROTATION_0
-        internal var specificPreviewSize: Point? = null
+        internal var specificPreviewSize: Size? = null
+        internal var frameSize: Size = DEFAULT_FRAME_SIZE
         internal var neverDistorted = true
 
         fun setClientContext(context: Context): Builder {
@@ -757,8 +763,13 @@ class CameraManipulator private constructor(builder: Builder) {
             return this
         }
 
-        fun setSpecificPreviewSize(specificPreviewSize: Point): Builder {
+        fun setSpecificPreviewSize(specificPreviewSize: Size): Builder {
             this.specificPreviewSize = specificPreviewSize
+            return this
+        }
+
+        fun setFrameSize(frameSize: Size): Builder {
+            this.frameSize = frameSize
             return this
         }
 
@@ -822,6 +833,10 @@ class CameraManipulator private constructor(builder: Builder) {
         /** As per Android doc, it should be greater than 1 */
         const val IMAGE_READER_MAX_IMAGE = 2
 
+        /** Default frame data size. If the camera doesn't support this output size, as per Android doc,
+         * it will rounded to the most appropriate one */
+        val DEFAULT_FRAME_SIZE = Size(320, 240)
+
         /**
          * Given `choices` of `Size`s supported by a camera, choose the smallest one that
          * is at least as large as the respective texture view size, and that is at most as large as
@@ -841,7 +856,7 @@ class CameraManipulator private constructor(builder: Builder) {
             textureViewWidth: Int,
             textureViewHeight: Int,
             additionalRotation: Int,
-            specificPreviewSize: Point?
+            specificPreviewSize: Size?
         ): Size {
             var bestSize: Size = choices[0]
             // Initialise the best size. The elements of choices usually sorted by resolution in descending order
@@ -867,8 +882,8 @@ class CameraManipulator private constructor(builder: Builder) {
 
             for (size in choices) {
                 // The client had specified its favorite preview size, just use it if it is supported
-                if (specificPreviewSize != null && specificPreviewSize.x == size.width
-                    && specificPreviewSize.y == size.height
+                if (specificPreviewSize != null && specificPreviewSize.width == size.width
+                    && specificPreviewSize.height == size.height
                 ) {
                     return size
                 }
