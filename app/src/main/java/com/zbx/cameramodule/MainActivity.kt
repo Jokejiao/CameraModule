@@ -25,6 +25,7 @@ class MainActivity : AppCompatActivity(), CameraManipulator.CameraCallback, View
     private lateinit var btnPreview: Button
     private lateinit var btnFrame: Button
     private lateinit var frameTextView: TextView
+    private lateinit var resolutionTextView: TextView
 
     private var previewStarted = false
     private var frameStarted = false
@@ -32,12 +33,16 @@ class MainActivity : AppCompatActivity(), CameraManipulator.CameraCallback, View
     private var frameCount = 0
 
     override fun onCameraOpened(cameraId: String) {
+        Log.i(TAG, "Camera opened")
     }
 
     override fun onCameraPreviewSize(cameraId: String, previewSize: Size) {
+        resolutionTextView.text = "${previewSize.width}*${previewSize.height}"
     }
 
     override fun onCameraClosed(cameraId: String) {
+        Log.i(TAG, "Camera closed")
+        resolutionTextView.text = ""
     }
 
     override fun onCameraError(cameraId: String, errorMsg: String) {
@@ -54,6 +59,7 @@ class MainActivity : AppCompatActivity(), CameraManipulator.CameraCallback, View
         btnPreview = findViewById(R.id.button_preview)
         btnFrame = findViewById(R.id.button_frame)
         frameTextView = findViewById(R.id.textview_frame)
+        resolutionTextView = findViewById(R.id.textview_resolution)
 
         btnPreview.setOnClickListener(this)
         btnFrame.setOnClickListener(this)
@@ -143,6 +149,7 @@ class MainActivity : AppCompatActivity(), CameraManipulator.CameraCallback, View
     }
 
     companion object {
+        private val TAG by lazy { CameraManipulator::class.java.simpleName }
         private const val FRAGMENT_DIALOG = "dialog"
         private const val THROTTLE_DELAY = 1000L
     }

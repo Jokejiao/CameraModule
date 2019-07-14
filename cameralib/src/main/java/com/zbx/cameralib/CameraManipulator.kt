@@ -58,9 +58,7 @@ class CameraManipulator private constructor(builder: Builder) {
     /** An [ImageReader] that read the image frame data */
     private var imageReader: ImageReader? = null
 
-    /** The stream configuration map of the camera */
-//    private var configMap: StreamConfigurationMap? = null
-
+    /** Camera callback to notify the camera states */
     private var cameraCallback: CameraCallback? = null
 
     /** The Android context of the client */
@@ -201,6 +199,7 @@ class CameraManipulator private constructor(builder: Builder) {
             captureSession?.close()
             captureSession = null
             cameraDevice?.close()
+            cameraCallback?.onCameraClosed(cameraId)
             cameraDevice = null
             imageReader?.close()
             imageReader = null
@@ -407,6 +406,7 @@ class CameraManipulator private constructor(builder: Builder) {
                 rotatedPreviewWidth, rotatedPreviewHeight,
                 additionalRotation, specificPreviewSize
             )
+            cameraCallback?.onCameraPreviewSize(cameraId, previewSize)
             // We fit the aspect ratio of TextureView to the size of preview we picked.
             // Be mindful of that setAspectRatio->requestLayout->onMeasure(async) would be called later than
             // configureTransform(). Thus configureTransform() must be called once again in onSurfaceTextureSizeChanged
@@ -669,6 +669,7 @@ class CameraManipulator private constructor(builder: Builder) {
             Log.i(TAG, "Camera disconnected: $cameraId")
             cameraOpenCloseLock.release()
             cameraDevice.close()
+            cameraCallback?.onCameraClosed(cameraId)
             this@CameraManipulator.cameraDevice = null
         }
 
