@@ -26,6 +26,15 @@ import kotlin.reflect.KProperty
  * Author: Ke Jiao (Alex)
  * An instance of CameraManipulator enables the client (the app uses this lib) to open a specific camera,
  * render the preview frame on a TextureView, and obtain frame data
+ *
+ * Highlight capabilities:
+ * (1) Automatically choose optimal preview size based on the camera and the dimension of the TextureView
+ * (2) Reversely adjust the dimension of the TextureView based on its layout constraints
+ * (3) Supporting Never-Distort by showing the exact central region of the image
+ * (4) Independently Start/Stop preview/frame catching at any time at will
+ * (5) Supporting screen rotations (If the gravity sensor does work)
+ * (6) Additional image rotation(For calibrating non-standard device) and flip-over horizontally(Mirror effect)
+ *
  * Note that frame catching causes frequent GC while preview gives rise to an increasing native heap
  * allocation(Yet can be GCed eventually). So far, no memory leak has detected
  * @param builder the builder object of the manipulator
@@ -94,6 +103,10 @@ class CameraManipulator private constructor(builder: Builder) {
     /** True for displaying the central region of the image, false for displaying the entire image  */
     private var neverDistorted = true
 
+    /** Upper and Lower area ratios for choosing an optimal preview size(see chooseOptimalSize()) */
+    private var upperAreaRatio = DEFAULT_UPPER_AREA_RATIO
+    private var lowerAreaRatio = DEFAULT_LOWER_AREA_RATIO
+
     /** The textureView surface for preview */
     private var viewSurface: Surface? by Delegates.observable(null, ::surfaceChangeHandler)
 
@@ -127,6 +140,8 @@ class CameraManipulator private constructor(builder: Builder) {
         specificPreviewSize = builder.specificPreviewSize
         frameSize = builder.frameSize
         neverDistorted = builder.neverDistorted
+        upperAreaRatio = builder.upperAreaRatio
+        lowerAreaRatio = builder.lowerAreaRatio
     }
 
     enum class FrameDataType {
@@ -408,7 +423,8 @@ class CameraManipulator private constructor(builder: Builder) {
             previewSize = chooseOptimalSize(
                 outputSizes,
                 rotatedPreviewWidth, rotatedPreviewHeight,
-                additionalRotation, specificPreviewSize
+                additionalRotation, specificPreviewSize,
+                lowerAreaRatio, upperAreaRatio
             )
             cameraCallback?.onCameraPreviewSize(cameraId, previewSize)
             // We fit the aspect ratio of TextureView to the size of preview we picked.
@@ -607,6 +623,7 @@ class CameraManipulator private constructor(builder: Builder) {
     }
 
     /**
+     * Catching the frame data
      * The client needs to implement FrameDataCallback if it managed to process the frame data
      * @param callback the client implementation of FrameDataCallback
      * If null, means no frame data is required any more
@@ -722,6 +739,8 @@ class CameraManipulator private constructor(builder: Builder) {
         internal var specificPreviewSize: Size? = null
         internal var frameSize: Size = DEFAULT_FRAME_SIZE
         internal var neverDistorted = true
+        internal var upperAreaRatio = DEFAULT_UPPER_AREA_RATIO
+        internal var lowerAreaRatio = DEFAULT_LOWER_AREA_RATIO
 
         fun setClientContext(context: Context): Builder {
             this.context = context
@@ -778,6 +797,30 @@ class CameraManipulator private constructor(builder: Builder) {
             return this
         }
 
+        fun setUpperAreaRatio(ratio: Float): Builder {
+            if (ratio > MAX_UPPER_AREA_RATIO) {
+                this.upperAreaRatio = MAX_UPPER_AREA_RATIO
+            } else if (ratio < MIN_UPPER_AREA_RATIO) {
+                this.upperAreaRatio = MIN_UPPER_AREA_RATIO
+            } else {
+                this.upperAreaRatio = ratio
+            }
+
+            return this
+        }
+
+        fun setLowerAreaRatio(ratio: Float): Builder {
+            if (ratio < MIN_LOWER_AREA_RATIO) {
+                this.lowerAreaRatio = MIN_LOWER_AREA_RATIO
+            } else if (ratio > MAX_LOWER_AREA_RATIO) {
+                this.lowerAreaRatio = MAX_LOWER_AREA_RATIO
+            } else {
+                this.lowerAreaRatio = ratio
+            }
+
+            return this
+        }
+
         fun build(): CameraManipulator? {
             if (context == null) {
                 Log.e(TAG, "Client must pass its Android Context")
@@ -812,8 +855,12 @@ class CameraManipulator private constructor(builder: Builder) {
          * Using a much higher preview resolution than the view's is a waste of resources.
          * Using too low resolution would have an unsatisfactory display effect
          */
-        private const val UPPER_AREA_RATIO = 1.5F
-        private const val LOWER_AREA_RATIO = 0.75F
+        private const val DEFAULT_UPPER_AREA_RATIO = 1.75F
+        private const val DEFAULT_LOWER_AREA_RATIO = 0.5F
+        private const val MAX_UPPER_AREA_RATIO = 2.0F
+        private const val MIN_UPPER_AREA_RATIO = 1.0F
+        private const val MAX_LOWER_AREA_RATIO = 1.0F
+        private const val MIN_LOWER_AREA_RATIO = 0.1F
 
         /** The sequence number of the background handler thread */
         private var THREAD_NUM = 0
@@ -838,16 +885,17 @@ class CameraManipulator private constructor(builder: Builder) {
         val DEFAULT_FRAME_SIZE = Size(320, 240)
 
         /**
-         * Given `choices` of `Size`s supported by a camera, choose the smallest one that
-         * is at least as large as the respective texture view size, and that is at most as large as
-         * the respective max size, and whose aspect ratio matches with the specified value. If such
-         * size doesn't exist, choose the largest one that is at most as large as the respective max
-         * size, and whose aspect ratio matches with the specified value.
+         * Given `choices` of `Size`s supported by a camera, the TextureView dimension and
+         * the area ratio constraints, Pick out the optimal preview size.
          *
          * @param choices           The list of sizes that the camera supports for the intended
          *                          output class
          * @param textureViewWidth  The width of the texture view relative to sensor coordinate
          * @param textureViewHeight The height of the texture view relative to sensor coordinate
+         * @param additionalRotation the additionalRotation
+         * @param specificPreviewSize the preview size specified by the client
+         * @param lowerAreaRatio the area value of the output divides that of the view must be greater than this value
+         * @param upperAreaRatio the area value of the output divides that of the view must be less than this value
          * @return The optimal `Size`, or an arbitrary one if none were big enough
          */
         @JvmStatic
@@ -856,7 +904,9 @@ class CameraManipulator private constructor(builder: Builder) {
             textureViewWidth: Int,
             textureViewHeight: Int,
             additionalRotation: Int,
-            specificPreviewSize: Size?
+            specificPreviewSize: Size?,
+            lowerAreaRatio: Float = DEFAULT_LOWER_AREA_RATIO,
+            upperAreaRatio: Float = DEFAULT_UPPER_AREA_RATIO
         ): Size {
             var bestSize: Size = choices[0]
             // Initialise the best size. The elements of choices usually sorted by resolution in descending order
@@ -876,7 +926,7 @@ class CameraManipulator private constructor(builder: Builder) {
                 if (it.width > MAX_PREVIEW_WIDTH || it.height > MAX_PREVIEW_HEIGHT) false
                 else {
                     val result = (it.width * it.height) / (textureViewWidth * textureViewHeight).toFloat()
-                    result in LOWER_AREA_RATIO..UPPER_AREA_RATIO
+                    result in lowerAreaRatio..upperAreaRatio
                 }
             }
 
@@ -884,22 +934,20 @@ class CameraManipulator private constructor(builder: Builder) {
                 // The client had specified its favorite preview size, just use it if it is supported
                 if (specificPreviewSize != null && specificPreviewSize.width == size.width
                     && specificPreviewSize.height == size.height
-                ) {
-                    return size
-                }
+                ) return size
 
+                // Filter those sizes which meet the area ratio requirement then compare the width/height ratio
+                // matching rate against bestSize. The w/h ratio matching degree is over the area ratio, as this
+                // strategy makes the view shows up larger region of the camera image
+                // for example, the default best size 1920*1080 might be chosen instead of 720*720 for a 525*788 view
                 if (isNormalRotate) {
                     if (filterPreviewSize(size) && (abs(size.height / size.width.toFloat() - previewViewRatio)
                                 < abs(bestSize.height / bestSize.width.toFloat() - previewViewRatio))
-                    ) {
-                        bestSize = size
-                    }
+                    ) bestSize = size
                 } else {
                     if (filterPreviewSize(size) && (abs(size.width / size.height.toFloat() - previewViewRatio)
                                 < abs(bestSize.width / bestSize.height.toFloat() - previewViewRatio))
-                    ) {
-                        bestSize = size
-                    }
+                    ) bestSize = size
                 }
             }
 
