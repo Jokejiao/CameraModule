@@ -4,7 +4,10 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.content.res.Configuration
-import android.graphics.*
+import android.graphics.ImageFormat
+import android.graphics.Matrix
+import android.graphics.RectF
+import android.graphics.SurfaceTexture
 import android.hardware.camera2.*
 import android.media.ImageReader
 import android.os.Handler
@@ -14,7 +17,6 @@ import android.util.Log
 import android.util.Size
 import android.view.Surface
 import android.view.TextureView
-import android.view.View
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
@@ -482,7 +484,7 @@ class CameraManipulator private constructor(builder: Builder) {
                 if (neverDistorted) {
                     if (xTranslation < 0) {
                         val refViewHeight = viewWidth * viewHeight / (viewWidth + xTranslation)
-                        var offset = (refViewHeight - viewHeight) / 2
+                        val offset = (refViewHeight - viewHeight) / 2
                         targetRect.apply {
                             left -= offset
                             right += offset
@@ -492,7 +494,7 @@ class CameraManipulator private constructor(builder: Builder) {
 
                     if (yTranslation < 0) {
                         val refViewWidth = viewWidth * viewHeight / (viewHeight + yTranslation)
-                        var offset = (refViewWidth - viewWidth) / 2
+                        val offset = (refViewWidth - viewWidth) / 2
                         targetRect.apply {
                             top -= offset
                             bottom += offset
@@ -513,7 +515,7 @@ class CameraManipulator private constructor(builder: Builder) {
 
                 if (xTranslation < 0) {
                     val refViewHeight = viewWidth * viewHeight / (viewWidth + xTranslation)
-                    var offset = (refViewHeight - viewHeight) / 2
+                    val offset = (refViewHeight - viewHeight) / 2
                     targetRect.apply {
                         top -= offset
                         bottom += offset
@@ -523,7 +525,7 @@ class CameraManipulator private constructor(builder: Builder) {
 
                 if (yTranslation < 0) {
                     val refViewWidth = viewWidth * viewHeight / (viewHeight + yTranslation)
-                    var offset = (refViewWidth - viewWidth) / 2
+                    val offset = (refViewWidth - viewWidth) / 2
                     targetRect.apply {
                         left -= offset
                         right += offset
@@ -539,9 +541,6 @@ class CameraManipulator private constructor(builder: Builder) {
 
     /**
      * Determines if the dimensions are swapped given the phone's current rotation.
-     *
-     * @param rotation The current rotation of the display
-     *
      * @return true if the dimensions are swapped, false otherwise.
      */
     private fun areDimensionsSwapped(): Boolean {
@@ -580,6 +579,7 @@ class CameraManipulator private constructor(builder: Builder) {
             this.textureView?.setTransformRoutine(null) // The view doesn't need transformation any more
             this.textureView = null
             // Stop the preview
+            viewSurface?.release()
             viewSurface = null
         } else {
             if (this.textureView != null) {  // Replace the old textureView
@@ -798,24 +798,20 @@ class CameraManipulator private constructor(builder: Builder) {
         }
 
         fun setUpperAreaRatio(ratio: Float): Builder {
-            if (ratio > MAX_UPPER_AREA_RATIO) {
-                this.upperAreaRatio = MAX_UPPER_AREA_RATIO
-            } else if (ratio < MIN_UPPER_AREA_RATIO) {
-                this.upperAreaRatio = MIN_UPPER_AREA_RATIO
-            } else {
-                this.upperAreaRatio = ratio
+            when {
+                ratio > MAX_UPPER_AREA_RATIO -> this.upperAreaRatio = MAX_UPPER_AREA_RATIO
+                ratio < MIN_UPPER_AREA_RATIO -> this.upperAreaRatio = MIN_UPPER_AREA_RATIO
+                else -> this.upperAreaRatio = ratio
             }
 
             return this
         }
 
         fun setLowerAreaRatio(ratio: Float): Builder {
-            if (ratio < MIN_LOWER_AREA_RATIO) {
-                this.lowerAreaRatio = MIN_LOWER_AREA_RATIO
-            } else if (ratio > MAX_LOWER_AREA_RATIO) {
-                this.lowerAreaRatio = MAX_LOWER_AREA_RATIO
-            } else {
-                this.lowerAreaRatio = ratio
+            when {
+                ratio < MIN_LOWER_AREA_RATIO -> this.lowerAreaRatio = MIN_LOWER_AREA_RATIO
+                ratio > MAX_LOWER_AREA_RATIO -> this.lowerAreaRatio = MAX_LOWER_AREA_RATIO
+                else -> this.lowerAreaRatio = ratio
             }
 
             return this
