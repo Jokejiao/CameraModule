@@ -2,11 +2,10 @@ package com.zbx.cameramodule
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.content.res.Resources
 import android.os.Build
-import android.support.v7.app.AppCompatActivity
 import android.os.Bundle
 import android.os.Handler
+import android.support.v7.app.AppCompatActivity
 import android.util.Log
 import android.util.Size
 import android.view.View
@@ -37,7 +36,7 @@ class MainActivity : AppCompatActivity(), CameraManipulator.CameraCallback, View
     }
 
     override fun onCameraPreviewSize(cameraId: String, previewSize: Size) {
-        resolutionTextView.text = "${previewSize.width}*${previewSize.height}"
+        resolutionTextView.text = resources.getString(R.string.resolution, previewSize.width, previewSize.height)
     }
 
     override fun onCameraClosed(cameraId: String) {
@@ -67,7 +66,9 @@ class MainActivity : AppCompatActivity(), CameraManipulator.CameraCallback, View
 
     override fun onDataAvailable(frameData: ByteArray?) {
         frameData ?: return
-        if (frameData?.isNotEmpty()) frameTextView.text = "Frame: ${++frameCount}"
+        if (frameData.isNotEmpty()) {
+            frameTextView.text = resources.getString(R.string.frame_count, ++frameCount)
+        }
     }
 
     override fun onClick(v: View?) {
@@ -108,9 +109,9 @@ class MainActivity : AppCompatActivity(), CameraManipulator.CameraCallback, View
     override fun onResume() {
         super.onResume()
         cameraManipulator =
-            CameraManipulator.Builder().setClientContext(this)/*.setPreviewOn(textureView)*/.setCameraCallback(this)
+            CameraManipulator.Builder().setClientContext(this).setPreviewOn(textureView).setCameraCallback(this)
                 .setRotation(windowManager.defaultDisplay.rotation).setCameraId(1)
-                /*.setAdditionalRotation(CameraManipulator.ROTATION_90).setFlipOver(true)*/.build()
+                ./*setAdditionalRotation(CameraManipulator.ROTATION_90).setFlipOver(true).*/build()
         cameraManipulator?.start()
 
         // The camera had been stopped at onPause(), thus reset the states
