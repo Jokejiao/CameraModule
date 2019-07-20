@@ -78,7 +78,7 @@ class CameraManipulator private constructor(builder: Builder) {
     /** The ID of the camera being manipulate */
     private var cameraId: String
 
-    /** The device  rotation */
+    /** The device rotation */
     private var rotation: Int
 
     /** Some devices need to have an additional rotation */
@@ -607,6 +607,8 @@ class CameraManipulator private constructor(builder: Builder) {
      * Resize the textureView in terms of the preview aspect ratio
      * Transform the textureView content matrix to display well-fitted camera images
      * Create camera preview session and set the preview repeating request
+     * Note: In most cases, the orientation of the back camera is 90 degree while the front
+     * is 270. Android "seems" rotate the taken image for this degree in advance and then render it on screen.
      * @param viewWidth width of the texture view
      * @param viewHeight height of the texture view
      */
@@ -634,6 +636,7 @@ class CameraManipulator private constructor(builder: Builder) {
             frameDataCallback = null
             // Stop the frame feedback
             readerSurface = null
+            // readerSurface will be released by close()
             imageReader?.close()
             imageReader = null
         } else {
