@@ -84,9 +84,6 @@ class CameraManipulator private constructor(builder: Builder) {
     /** Some devices need to have an additional rotation */
     private var additionalRotation = ROTATION_0
 
-    /** Orientation of the camera sensor */
-    private var sensorOrientation: Int? = 0
-
     /** A specific preview size the client wants to have */
     private var specificPreviewSize: Size? = null
 
@@ -400,44 +397,16 @@ class CameraManipulator private constructor(builder: Builder) {
     }
 
     /**
-     * Sets up member variables related to camera.
-     *
-     * @param width  The width of available size for camera preview
-     * @param height The height of available size for camera preview
+     * Get the orientation of the camera sensor
+     * @return the sensor orientation, or -1 if error occurred
      */
-    private fun setUpCameraOutputs(width: Int, height: Int) {
+    fun getSensorOrientation(): Int {
+        var sensorOrientation = -1
         val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+
         try {
             val characteristics = manager.getCameraCharacteristics(cameraId)
-
-            // Find out if we need to swap dimension to get the preview size relative to sensor
-            // coordinate.
             sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION)
-            val swappedDimensions = areDimensionsSwapped()
-            val rotatedPreviewWidth = if (swappedDimensions) height else width
-            val rotatedPreviewHeight = if (swappedDimensions) width else height
-
-            val outputSizes = getSupportedOutputSizes()
-            if (outputSizes.isNullOrEmpty()) return
-            // Danger, W.R.! Attempting to use too large a preview size could exceed the camera
-            // bus' bandwidth limitation, resulting in gorgeous previews but the storage of
-            // garbage capture data.
-            previewSize = chooseOptimalSize(
-                outputSizes,
-                rotatedPreviewWidth, rotatedPreviewHeight,
-                additionalRotation, specificPreviewSize,
-                lowerAreaRatio, upperAreaRatio
-            )
-            cameraCallback?.onCameraPreviewSize(cameraId, previewSize)
-            // We fit the aspect ratio of TextureView to the size of preview we picked.
-            // Be mindful of that setAspectRatio->requestLayout->onMeasure(async) would be called later than
-            // configureTransform(). Thus configureTransform() must be called once again in onSurfaceTextureSizeChanged
-            // to make things right
-            if (context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
-                textureView?.setAspectRatio(previewSize.width, previewSize.height)
-            } else {
-                textureView?.setAspectRatio(previewSize.height, previewSize.width)
-            }
         } catch (e: CameraAccessException) {
             Log.e(TAG, e.toString())
             cameraCallback?.onCameraError(cameraId, CAMERA_ACCESS_EXCEPTION)
@@ -446,6 +415,55 @@ class CameraManipulator private constructor(builder: Builder) {
             // device this code runs.
             Log.e(TAG, e.toString())
             cameraCallback?.onCameraError(cameraId, CAMERA_API_NOT_SUPPORTED)
+        }
+
+        return sensorOrientation
+    }
+
+    /**
+     * Get camera display rotation
+     * If you want to make the camera image show in the same orientation as the display,
+     * rotate the camera by the return value
+     * It's just like setCameraDisplayOrientation() logic of Camera1 Api, see setDisplayOrientation() doc
+     * the difference is Camera1 doesn't rotate the image automatically before rendering it on your behalf
+     */
+    fun getCameraDisplayRotation(): Int {
+        return rotationMap.getValue(rotation).plus(additionalRotation)
+    }
+
+    /**
+     * Sets up member variables related to camera.
+     *
+     * @param width  The width of available size for camera preview
+     * @param height The height of available size for camera preview
+     */
+    private fun setUpCameraOutputs(width: Int, height: Int) {
+        // Find out if we need to swap dimension to get the preview size relative to sensor
+        // coordinate.
+        val swappedDimensions = areDimensionsSwapped()
+        val rotatedPreviewWidth = if (swappedDimensions) height else width
+        val rotatedPreviewHeight = if (swappedDimensions) width else height
+
+        val outputSizes = getSupportedOutputSizes()
+        if (outputSizes.isNullOrEmpty()) return
+        // Danger, W.R.! Attempting to use too large a preview size could exceed the camera
+        // bus' bandwidth limitation, resulting in gorgeous previews but the storage of
+        // garbage capture data.
+        previewSize = chooseOptimalSize(
+            outputSizes,
+            rotatedPreviewWidth, rotatedPreviewHeight,
+            additionalRotation, specificPreviewSize,
+            lowerAreaRatio, upperAreaRatio
+        )
+        cameraCallback?.onCameraPreviewSize(cameraId, previewSize)
+        // We fit the aspect ratio of TextureView to the size of preview we picked.
+        // Be mindful of that setAspectRatio->requestLayout->onMeasure(async) would be called later than
+        // configureTransform(). Thus configureTransform() must be called once again in onSurfaceTextureSizeChanged
+        // to make things right
+        if (context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            textureView?.setAspectRatio(previewSize.width, previewSize.height)
+        } else {
+            textureView?.setAspectRatio(previewSize.height, previewSize.width)
         }
     }
 
@@ -470,7 +488,7 @@ class CameraManipulator private constructor(builder: Builder) {
         val centerX = viewRect.centerX()
         val centerY = viewRect.centerY()
 
-        val totalRotation = rotationMap.getValue(rotation).plus(additionalRotation)
+        val totalRotation = getCameraDisplayRotation()
 
         // Two different transformational strategies in terms of the rotation.
         // From the logic of AutoFitTextureView, xTranslation and yTranslation are invariably minus or zero
@@ -545,6 +563,8 @@ class CameraManipulator private constructor(builder: Builder) {
      */
     private fun areDimensionsSwapped(): Boolean {
         var swappedDimensions = false
+        val sensorOrientation = getSensorOrientation()
+
         when (rotation) {
             Surface.ROTATION_0, Surface.ROTATION_180 -> {
                 if (sensorOrientation == 90 || sensorOrientation == 270) {
@@ -608,7 +628,8 @@ class CameraManipulator private constructor(builder: Builder) {
      * Transform the textureView content matrix to display well-fitted camera images
      * Create camera preview session and set the preview repeating request
      * Note: In most cases, the orientation of the back camera is 90 degree while the front
-     * is 270. Android "seems" rotate the taken image for this degree in advance and then render it on screen.
+     * is 270. With camera2 Api, Android "seems" rotate the taken image for this degree in advance
+     * and then render it on screen. (Camera1 Api will not? See setDisplayOrientation() doc)
      * @param viewWidth width of the texture view
      * @param viewHeight height of the texture view
      */
