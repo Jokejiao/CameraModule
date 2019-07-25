@@ -15,11 +15,19 @@
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintBottom_toTopOf="@id/button_preview"/>
     <Button
+            android:text="@string/start_all"
+            android:layout_width="0dp"
+            android:layout_height="150dp"
+            android:id="@+id/button_all" app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toStartOf="@+id/button_preview"
+            app:layout_constraintHorizontal_chainStyle="spread_inside"
+            app:layout_constraintBottom_toBottomOf="parent"/>
+    <Button
             android:text="@string/start_preview"
             android:layout_width="0dp"
             android:layout_height="150dp"
-            android:id="@+id/button_preview" app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintHorizontal_bias="0.5" app:layout_constraintEnd_toStartOf="@+id/button_frame"
+            android:id="@+id/button_preview" app:layout_constraintStart_toEndOf="@+id/button_all"
+            app:layout_constraintEnd_toStartOf="@+id/button_frame"
             app:layout_constraintHorizontal_chainStyle="spread_inside"
             app:layout_constraintBottom_toBottomOf="parent"/>
     <Button
@@ -27,7 +35,7 @@
             android:layout_width="0dp"
             android:layout_height="150dp"
             android:id="@+id/button_frame"
-            app:layout_constraintStart_toEndOf="@+id/button_preview" app:layout_constraintHorizontal_bias="0.5"
+            app:layout_constraintStart_toEndOf="@+id/button_preview"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintBottom_toBottomOf="parent"/>
     <TextView

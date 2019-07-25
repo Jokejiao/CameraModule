@@ -23,7 +23,6 @@ import kotlin.math.abs
 import kotlin.properties.Delegates
 import kotlin.reflect.KProperty
 
-
 /**
  * Author: Ke Jiao (Alex)
  * An instance of CameraManipulator enables the client (the app uses this lib) to open a specific camera,
@@ -106,6 +105,12 @@ class CameraManipulator private constructor(builder: Builder) {
     private var upperAreaRatio = DEFAULT_UPPER_AREA_RATIO
     private var lowerAreaRatio = DEFAULT_LOWER_AREA_RATIO
 
+    /** Android system CameraManager */
+    private lateinit var cameraManager: CameraManager
+
+    /** The camera hardware level(As per Android doc, LEGACY, LIMITED, FULL, etc. */
+    private var hardwareLevel: Int = CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_LEGACY
+
     /** The textureView surface for preview */
     private var viewSurface: Surface? by Delegates.observable(null, ::surfaceChangeHandler)
 
@@ -117,11 +122,6 @@ class CameraManipulator private constructor(builder: Builder) {
     renew the request by invoking setRepeatingRequest) */
     private val sessionSurfaceList = mutableListOf<Surface>()
     private val currentSessionSurfaceList = mutableListOf<Surface>()
-
-    /** Throttle the creation of CaptureSession, since it is asynchronous. A quickly repeat recreation may cause
-    a closed session being configured and throw IllegalStateException */
-    @Volatile
-    private var sessionCreationInProgress = false
 
     init {
         context = builder.context!!
@@ -159,13 +159,15 @@ class CameraManipulator private constructor(builder: Builder) {
     }
 
     fun start() {
-        startBackgroundThread()
+        /** Quite a few operations such as UI manipulations in CameraCallback routines,
+         *  TextureView adjustment need to run on main thread */
+//        startBackgroundThread()
         openCamera()
     }
 
     fun stop() {
         closeCamera()
-        stopBackgroundThread()
+//        stopBackgroundThread()
     }
 
     /**
@@ -181,8 +183,8 @@ class CameraManipulator private constructor(builder: Builder) {
             return
         }
 
-        val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-        if (!manager.cameraIdList.contains(cameraId)) {
+        cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+        if (!cameraManager.cameraIdList.contains(cameraId)) {
             Log.e(TAG, "Camera ID is invalid")
             cameraCallback?.onCameraError(cameraId, CAMERA_ID_INVALID)
             return
@@ -195,7 +197,7 @@ class CameraManipulator private constructor(builder: Builder) {
             }
 
             Log.i(TAG, "Try opening the camera: $cameraId")
-            manager.openCamera(cameraId, stateCallback, backgroundHandler)
+            cameraManager.openCamera(cameraId, stateCallback, backgroundHandler)
             return
         } catch (e: CameraAccessException) {
             Log.e(TAG, e.toString())
@@ -234,9 +236,10 @@ class CameraManipulator private constructor(builder: Builder) {
      * If it is not the case, this method would be essentially doing nothing at all
      */
     private fun setPreviewAndFrame() {
-        setPreviewOn(textureView)
-        setFrameDataType(frameDataType)
-        setFrameDataCallback(frameDataCallback)
+        setPreviewOn(textureView).setFrameDataType(frameDataType).setFrameDataCallback(frameDataCallback)
+        if (textureView == null || textureView!!.isAvailable) {
+            trigger()
+        }
     }
 
     /**
@@ -246,6 +249,8 @@ class CameraManipulator private constructor(builder: Builder) {
      * @param new new property value
      */
     private fun surfaceChangeHandler(prop: KProperty<*>, old: Surface?, new: Surface?) {
+        Log.v(TAG, "surface prop changed:$prop.name")
+
         // Remove the old surface from and add the new to the request builder
         if (old != null) previewRequestBuilder.removeTarget(old)
         if (new != null) previewRequestBuilder.addTarget(new)
@@ -259,72 +264,7 @@ class CameraManipulator private constructor(builder: Builder) {
             }
         } else if (old != null) {
             sessionSurfaceList.remove(old)
-            old.release()
             if (new == null) Log.d(TAG, "$prop.name surface is removed") else sessionSurfaceList.add(new)
-        }
-
-        // Abort the CaptureSession if there's no surface
-        // As per the doc, don't close the session for more efficient reuse
-        if (viewSurface == null && readerSurface == null) {
-            captureSession?.abortCaptures()
-            return
-        }
-
-        if (currentSessionSurfaceList.containsAll(sessionSurfaceList)) {
-            // reset repeating request
-            Log.d(TAG, "reset repeating request")
-            val previewRequest = previewRequestBuilder.build()
-            captureSession?.setRepeatingRequest(
-                previewRequest,
-                null, backgroundHandler
-            )
-        } else {
-            // recreate capture session
-            Log.d(TAG, "recreate capture session")
-            if (sessionCreationInProgress) return
-            sessionCreationInProgress = true
-            captureSession = null
-
-            try {
-                // Here, we create a CameraCaptureSession for camera preview.
-                cameraDevice?.createCaptureSession(
-                    sessionSurfaceList,
-                    object : CameraCaptureSession.StateCallback() {
-
-                        override fun onConfigured(cameraCaptureSession: CameraCaptureSession) {
-                            // The camera is already closed
-                            if (cameraDevice == null) return
-
-                            // When the session is ready, we start displaying the preview.
-                            captureSession = cameraCaptureSession
-                            sessionCreationInProgress = false
-
-                            // Save current session surface list
-                            currentSessionSurfaceList.clear()
-                            currentSessionSurfaceList.addAll(sessionSurfaceList)
-
-                            try {
-                                // Finally, we start displaying the camera preview.
-                                val previewRequest = previewRequestBuilder.build()
-                                captureSession?.setRepeatingRequest(
-                                    previewRequest,
-                                    null, backgroundHandler
-                                )
-                            } catch (e: CameraAccessException) {
-                                Log.e(TAG, e.toString())
-                            }
-                        }
-
-                        override fun onConfigureFailed(session: CameraCaptureSession) {
-                            Log.e(TAG, "Failed to configure camera preview")
-                            sessionCreationInProgress = false
-                            cameraCallback?.onCameraError(cameraId, CAMERA_CONFIG_FAILED)
-                        }
-                    }, null
-                )
-            } catch (e: CameraAccessException) {
-                Log.e(TAG, e.toString())
-            }
         }
     }
 
@@ -353,6 +293,7 @@ class CameraManipulator private constructor(builder: Builder) {
     private val surfaceTextureListener = object : TextureView.SurfaceTextureListener {
         override fun onSurfaceTextureAvailable(texture: SurfaceTexture, width: Int, height: Int) {
             startPreview(width, height)
+            trigger()
         }
 
         override fun onSurfaceTextureSizeChanged(texture: SurfaceTexture, width: Int, height: Int) {
@@ -373,9 +314,8 @@ class CameraManipulator private constructor(builder: Builder) {
      * Get a list of sizes compatible with SurfaceTexture to use as an output.
      */
     fun getSupportedOutputSizes(): Array<Size>? {
-        val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
         try {
-            val characteristics = manager.getCameraCharacteristics(cameraId)
+            val characteristics = cameraManager.getCameraCharacteristics(cameraId)
             val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
             if (map == null) {
                 cameraCallback?.onCameraError(cameraId, CAMERA_CHARACTERISTIC_FAILED)
@@ -401,12 +341,9 @@ class CameraManipulator private constructor(builder: Builder) {
      * @return the sensor orientation, or -1 if error occurred
      */
     fun getSensorOrientation(): Int {
-        var sensorOrientation = -1
-        val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-
         try {
-            val characteristics = manager.getCameraCharacteristics(cameraId)
-            sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION)
+            val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+            return characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: ERROR
         } catch (e: CameraAccessException) {
             Log.e(TAG, e.toString())
             cameraCallback?.onCameraError(cameraId, CAMERA_ACCESS_EXCEPTION)
@@ -417,7 +354,7 @@ class CameraManipulator private constructor(builder: Builder) {
             cameraCallback?.onCameraError(cameraId, CAMERA_API_NOT_SUPPORTED)
         }
 
-        return sensorOrientation
+        return ERROR
     }
 
     /**
@@ -584,45 +521,6 @@ class CameraManipulator private constructor(builder: Builder) {
     }
 
     /**
-     * Set the texture view indicates the client asks the lib to render the preview frame
-     * on this view ASAP. The lib will adjust the dimensions of the view based on the supported preview
-     * sizes of the camera.
-     * Currently, The texture view in most face recognition apps(usually in portrait mode)
-     * would be designed as fully-expanded in width whereas the height can be adjustable.
-     * @param textureView: the texture view on which the frames are going to be rendered.
-     * If null, means no preview required from now on
-     */
-    @Synchronized
-    fun setPreviewOn(textureView: AutoFitTextureView?) {
-        if (textureView == null) {
-            if (flipOver) this.textureView?.scaleX = -1f // reset the flip-over
-            this.textureView?.setTransformRoutine(null) // The view doesn't need transformation any more
-            this.textureView = null
-            // Stop the preview
-            viewSurface?.release()
-            viewSurface = null
-        } else {
-            if (this.textureView != null) {  // Replace the old textureView
-                if (flipOver) this.textureView?.scaleX = -1f // reset the flip-over
-                this.textureView?.setTransformRoutine(null)
-            }
-
-            this.textureView = textureView
-            if (flipOver) this.textureView?.scaleX = -1f // set the flip-over
-            textureView.setTransformRoutine { width, height ->
-                configureTransform(width, height)
-            }
-
-            // Start the preview
-            if (textureView.isAvailable) {
-                startPreview(textureView.width, textureView.height)
-            } else {
-                textureView.surfaceTextureListener = surfaceTextureListener
-            }
-        }
-    }
-
-    /**
      * Choose the optimal preview size
      * Resize the textureView in terms of the preview aspect ratio
      * Transform the textureView content matrix to display well-fitted camera images
@@ -646,25 +544,67 @@ class CameraManipulator private constructor(builder: Builder) {
     }
 
     /**
+     * Set the texture view indicates the client asks the lib to render the preview frame
+     * on this view ASAP. The lib will adjust the dimensions of the view based on the supported preview
+     * sizes of the camera.
+     * Currently, The texture view in most face recognition apps(usually in portrait mode)
+     * would be designed as fully-expanded in width whereas the height can be adjustable.
+     * @param textureView: the texture view on which the frames are going to be rendered.
+     * If null, means no preview required from now on
+     */
+    @Synchronized
+    fun setPreviewOn(textureView: AutoFitTextureView?): CameraManipulator {
+        if (textureView == null) {
+            if (flipOver) this.textureView?.scaleX = -1f // reset the flip-over
+            this.textureView?.setTransformRoutine(null) // The view doesn't need transformation any more
+            this.textureView = null
+            // Stop the preview
+            viewSurface?.release()
+            // Don't trigger the change handler unnecessarily
+            if (viewSurface != null) viewSurface = null
+        } else {
+            if (this.textureView != null) {  // Replace the old textureView
+                if (flipOver) this.textureView?.scaleX = -1f // reset the flip-over
+                this.textureView?.setTransformRoutine(null)
+            }
+
+            this.textureView = textureView
+            if (flipOver) this.textureView?.scaleX = -1f // set the flip-over
+            textureView.setTransformRoutine { width, height ->
+                configureTransform(width, height)
+            }
+
+            // Start the preview
+            if (textureView.isAvailable) {
+                startPreview(textureView.width, textureView.height)
+            } else {
+                textureView.surfaceTextureListener = surfaceTextureListener
+            }
+        }
+
+        return this
+    }
+
+    /**
      * Catching the frame data
      * The client needs to implement FrameDataCallback if it managed to process the frame data
      * @param callback the client implementation of FrameDataCallback
      * If null, means no frame data is required any more
      */
     @Synchronized
-    fun setFrameDataCallback(callback: FrameDataCallback?) {
+    fun setFrameDataCallback(callback: FrameDataCallback?): CameraManipulator {
         if (callback == null) {
             frameDataCallback = null
-            // Stop the frame feedback
-            readerSurface = null
             // readerSurface will be released by close()
             imageReader?.close()
             imageReader = null
+            // Stop the frame feedback. Don't trigger the change handler unnecessarily
+            if (readerSurface != null) readerSurface = null
         } else {
             // Just replace the existing callback and return
-            if (frameDataCallback != null) {
+            if (frameDataCallback != null && imageReader != null) {
                 frameDataCallback = callback
-                return
+                return this
             }
 
             frameDataCallback = callback
@@ -678,13 +618,95 @@ class CameraManipulator private constructor(builder: Builder) {
 
             readerSurface = imageReader?.surface
         }
+
+        return this
     }
 
     /**
      * Set the frame data type the client wants to obtain, e.g. NV21
      */
-    fun setFrameDataType(dataType: FrameDataType) {
+    fun setFrameDataType(dataType: FrameDataType): CameraManipulator {
         frameDataType = dataType
+        return this
+    }
+
+    /**
+     * Trigger camera preview and frame capturing in terms of settings
+     */
+    fun trigger() {
+        try {
+            // Abort the CaptureSession if there's no surface
+            // As per the doc, don't close the session for more efficient reuse
+            if (viewSurface == null && readerSurface == null) {
+                captureSession?.abortCaptures()
+                return
+            }
+
+            // Huawei Note10(LIMITED camera device) got no error when stop frame/preview by calling
+            // setRepeatingRequest() while some other devices(LEGACY camera devices) may give rise to
+            // "java.lang.IllegalArgumentException: Surface had no valid native Surface."
+            // error. Always recreate capture session if so.(https://source.android.com/devices/camera/versioning#camera_api2)
+            if (hardwareLevel != CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_LEGACY &&
+                currentSessionSurfaceList.containsAll(sessionSurfaceList)
+            ) {
+                // reset repeating request
+                Log.d(TAG, "reset repeating request")
+                val previewRequest = previewRequestBuilder.build()
+                captureSession?.setRepeatingRequest(
+                    previewRequest,
+                    null, backgroundHandler
+                )
+            } else {
+                // recreate capture session
+                Log.d(TAG, "recreate capture session")
+                cameraDevice?.createCaptureSession(
+                    sessionSurfaceList,
+                    object : CameraCaptureSession.StateCallback() {
+                        override fun onConfigured(cameraCaptureSession: CameraCaptureSession) {
+                            // The camera is already closed
+                            if (cameraDevice == null) return
+
+                            // When the session is ready, we start displaying the preview.
+                            captureSession = cameraCaptureSession
+
+                            // Save current session surface list
+                            currentSessionSurfaceList.clear()
+                            currentSessionSurfaceList.addAll(sessionSurfaceList)
+
+                            try {
+                                // Finally, we start displaying the camera preview.
+                                val previewRequest = previewRequestBuilder.build()
+                                captureSession?.setRepeatingRequest(
+                                    previewRequest,
+                                    null, backgroundHandler
+                                )
+                            } catch (e: CameraAccessException) {
+                                Log.e(TAG, e.toString())
+                            }
+                        }
+
+                        override fun onConfigureFailed(session: CameraCaptureSession) {
+                            Log.e(TAG, "Failed to configure camera preview")
+                            cameraCallback?.onCameraError(cameraId, CAMERA_CONFIG_FAILED)
+                        }
+                    }, backgroundHandler
+                )
+            }
+        } catch (e: CameraAccessException) {
+            Log.e(TAG, e.toString())
+        }
+    }
+
+    private fun getCameraHardwareLevel(): Int {
+        try {
+            return cameraManager.getCameraCharacteristics(cameraId)
+                .get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL)
+        } catch (e: CameraAccessException) {
+            Log.e(TAG, e.toString())
+            cameraCallback?.onCameraError(cameraId, CAMERA_ACCESS_EXCEPTION)
+        }
+
+        return ERROR
     }
 
     /**
@@ -708,6 +730,9 @@ class CameraManipulator private constructor(builder: Builder) {
                 CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE
             )
 
+            hardwareLevel = getCameraHardwareLevel()
+            Log.d(TAG, "Camera hardware level:$hardwareLevel")
+
             setPreviewAndFrame()
         }
 
@@ -729,8 +754,8 @@ class CameraManipulator private constructor(builder: Builder) {
      * Starts a background thread and its [Handler].
      */
     private fun startBackgroundThread() {
-        if (backgroundThread != null) {
-            backgroundThread = HandlerThread("CameraBackground#$THREAD_NUM++").also { it.start() }
+        if (backgroundThread == null) {
+            backgroundThread = HandlerThread("CameraBackground#${THREAD_NUM++}").also { it.start() }
             backgroundHandler = Handler(backgroundThread?.looper)
         }
     }
@@ -903,6 +928,9 @@ class CameraManipulator private constructor(builder: Builder) {
         /** Default frame data size. If the camera doesn't support this output size, as per Android doc,
          * it will rounded to the most appropriate one */
         val DEFAULT_FRAME_SIZE = Size(320, 240)
+
+        /** Denotes a function error */
+        private const val ERROR = -1
 
         /**
          * Given `choices` of `Size`s supported by a camera, the TextureView dimension and
