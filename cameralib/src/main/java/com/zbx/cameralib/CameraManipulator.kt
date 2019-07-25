@@ -141,6 +141,8 @@ class CameraManipulator private constructor(builder: Builder) {
         neverDistorted = builder.neverDistorted
         upperAreaRatio = builder.upperAreaRatio
         lowerAreaRatio = builder.lowerAreaRatio
+
+        cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
     }
 
     enum class FrameDataType {
@@ -183,7 +185,6 @@ class CameraManipulator private constructor(builder: Builder) {
             return
         }
 
-        cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
         if (!cameraManager.cameraIdList.contains(cameraId)) {
             Log.e(TAG, "Camera ID is invalid")
             cameraCallback?.onCameraError(cameraId, CAMERA_ID_INVALID)
@@ -642,7 +643,7 @@ class CameraManipulator private constructor(builder: Builder) {
                 return
             }
 
-            // Huawei Note10(LIMITED camera device) got no error when stop frame/preview by calling
+            // Huawei Note10(LIMITED camera device) got no error when stopping frame/preview by calling
             // setRepeatingRequest() while some other devices(LEGACY camera devices) may give rise to
             // "java.lang.IllegalArgumentException: Surface had no valid native Surface."
             // error. Always recreate capture session if so.(https://source.android.com/devices/camera/versioning#camera_api2)
