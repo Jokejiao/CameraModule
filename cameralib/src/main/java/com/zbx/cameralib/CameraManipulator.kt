@@ -660,6 +660,7 @@ class CameraManipulator private constructor(builder: Builder) {
             } else {
                 // recreate capture session
                 Log.d(TAG, "recreate capture session")
+                captureSession = null
                 cameraDevice?.createCaptureSession(
                     sessionSurfaceList,
                     object : CameraCaptureSession.StateCallback() {

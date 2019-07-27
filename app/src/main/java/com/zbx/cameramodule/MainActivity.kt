@@ -117,7 +117,9 @@ class MainActivity : AppCompatActivity(), CameraManipulator.CameraCallback, View
         }
 
         // Throttle the clicking or it may cause sorts of Camera Capture Session failure
-        v?.isEnabled = false
+        btnAll.isEnabled = false
+        btnFrame.isEnabled = false
+        btnPreview.isEnabled = false
         handler.postDelayed({
             btnAll.isEnabled = true
             btnFrame.isEnabled = true
@@ -132,16 +134,22 @@ class MainActivity : AppCompatActivity(), CameraManipulator.CameraCallback, View
                 .setClientContext(this).setCameraCallback(this)
                 .setRotation(windowManager.defaultDisplay.rotation).setCameraId(1)
                     .setPreviewOn(textureView).setFrameDataCallback(this@MainActivity)
-                /*.setAdditionalRotation(CameraManipulator.ROTATION_90).setFlipOver(true)*/.build()
+                .setAdditionalRotation(CameraManipulator.ROTATION_90).setFlipOver(true).build()
         cameraManipulator?.start()
 
         // The camera had been stopped at onPause(), thus reset the states
-        allStarted = false
-        previewStarted = false
-        frameStarted = false
-        btnAll.text = resources.getText(R.string.start_all)
-        btnPreview.text = resources.getText(R.string.start_preview)
-        btnFrame.text = resources.getText(R.string.start_frame)
+        allStarted = true
+        previewStarted = true
+        frameStarted = true
+        if (allStarted) {
+            btnAll.text = resources.getText(R.string.stop_all)
+            btnPreview.text = resources.getText(R.string.stop_preview)
+            btnFrame.text = resources.getText(R.string.stop_frame)
+        } else {
+            btnAll.text = resources.getText(R.string.start_all)
+            btnPreview.text = resources.getText(R.string.start_preview)
+            btnFrame.text = resources.getText(R.string.start_frame)
+        }
     }
 
     override fun onPause() {
@@ -177,6 +185,6 @@ class MainActivity : AppCompatActivity(), CameraManipulator.CameraCallback, View
     companion object {
         private val TAG by lazy { CameraManipulator::class.java.simpleName }
         private const val FRAGMENT_DIALOG = "dialog"
-        private const val THROTTLE_DELAY = 1000L
+        private const val THROTTLE_DELAY = 2000L
     }
 }
