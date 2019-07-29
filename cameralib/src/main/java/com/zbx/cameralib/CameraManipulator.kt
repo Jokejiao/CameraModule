@@ -106,7 +106,7 @@ class CameraManipulator private constructor(builder: Builder) {
     private var lowerAreaRatio = DEFAULT_LOWER_AREA_RATIO
 
     /** Android system CameraManager */
-    private lateinit var cameraManager: CameraManager
+    private var cameraManager: CameraManager
 
     /** The camera hardware level(As per Android doc, LEGACY, LIMITED, FULL, etc. */
     private var hardwareLevel: Int = CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_LEGACY
@@ -122,6 +122,9 @@ class CameraManipulator private constructor(builder: Builder) {
     renew the request by invoking setRepeatingRequest) */
     private val sessionSurfaceList = mutableListOf<Surface>()
     private val currentSessionSurfaceList = mutableListOf<Surface>()
+
+    /** Surfaces to be released once the capture stops rendering*/
+    private val surfaceToBeReleasedList = mutableListOf<Surface>()
 
     init {
         context = builder.context!!
@@ -224,6 +227,7 @@ class CameraManipulator private constructor(builder: Builder) {
             cameraDevice = null
             imageReader?.close()
             imageReader = null
+            releaseSurfaces()
         } catch (e: InterruptedException) {
             throw RuntimeException("Interrupted while trying to lock camera closing.", e)
         } finally {
@@ -559,14 +563,17 @@ class CameraManipulator private constructor(builder: Builder) {
             if (flipOver) this.textureView?.scaleX = -1f // reset the flip-over
             this.textureView?.setTransformRoutine(null) // The view doesn't need transformation any more
             this.textureView = null
-            // Stop the preview
-            viewSurface?.release()
             // Don't trigger the change handler unnecessarily
-            if (viewSurface != null) viewSurface = null
+            if (viewSurface != null) {
+                // Release the surface after stopping the preview rendering, or a native surface invalid eror may arise
+                viewSurface?.let {surfaceToBeReleasedList.add(it)}
+                viewSurface = null
+            }
         } else {
             if (this.textureView != null) {  // Replace the old textureView
                 if (flipOver) this.textureView?.scaleX = -1f // reset the flip-over
                 this.textureView?.setTransformRoutine(null)
+                viewSurface?.let { surfaceToBeReleasedList.add(it) }
             }
 
             this.textureView = textureView
@@ -596,7 +603,8 @@ class CameraManipulator private constructor(builder: Builder) {
     fun setFrameDataCallback(callback: FrameDataCallback?): CameraManipulator {
         if (callback == null) {
             frameDataCallback = null
-            // readerSurface will be released by close()
+            // readerSurface will be released by close(). Native surface invalid error will not take place even close
+            // this surface before stopping the rendering(don't know why)
             imageReader?.close()
             imageReader = null
             // Stop the frame feedback. Don't trigger the change handler unnecessarily
@@ -631,6 +639,15 @@ class CameraManipulator private constructor(builder: Builder) {
         return this
     }
 
+    /** Release all unused surfaces */
+    private fun releaseSurfaces() {
+        for (surface in surfaceToBeReleasedList) {
+            surface.release()
+            Log.v(TAG, "release surface:$surface")
+        }
+        surfaceToBeReleasedList.clear()
+    }
+
     /**
      * Trigger camera preview and frame capturing in terms of settings
      */
@@ -640,6 +657,7 @@ class CameraManipulator private constructor(builder: Builder) {
             // As per the doc, don't close the session for more efficient reuse
             if (viewSurface == null && readerSurface == null) {
                 captureSession?.abortCaptures()
+                releaseSurfaces()
                 return
             }
 
@@ -657,10 +675,15 @@ class CameraManipulator private constructor(builder: Builder) {
                     previewRequest,
                     null, backgroundHandler
                 )
+                releaseSurfaces()
             } else {
                 // recreate capture session
                 Log.d(TAG, "recreate capture session")
+                captureSession?.stopRepeating()
+                captureSession?.abortCaptures()
+                releaseSurfaces()
                 captureSession = null
+
                 cameraDevice?.createCaptureSession(
                     sessionSurfaceList,
                     object : CameraCaptureSession.StateCallback() {
