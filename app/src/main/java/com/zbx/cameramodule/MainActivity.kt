@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
+import android.os.Looper
 import android.support.v7.app.AppCompatActivity
 import android.util.Log
 import android.util.Size
@@ -30,7 +31,7 @@ class MainActivity : AppCompatActivity(), CameraManipulator.CameraCallback, View
     private var allStarted = false
     private var previewStarted = false
     private var frameStarted = false
-    private val handler = Handler()
+    private val handler = Handler(Looper.getMainLooper())
     private var frameCount = 0
 
     override fun onCameraOpened(cameraId: String) {
@@ -71,7 +72,7 @@ class MainActivity : AppCompatActivity(), CameraManipulator.CameraCallback, View
     override fun onDataAvailable(frameData: ByteArray?) {
         frameData ?: return
         if (frameData.isNotEmpty()) {
-            frameTextView.text = resources.getString(R.string.frame_count, ++frameCount)
+            handler.post { frameTextView.text = resources.getString(R.string.frame_count, ++frameCount) }
         }
     }
 

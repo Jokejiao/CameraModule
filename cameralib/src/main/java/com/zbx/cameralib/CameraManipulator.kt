@@ -12,6 +12,7 @@ import android.hardware.camera2.*
 import android.media.ImageReader
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.Looper
 import android.support.v4.content.ContextCompat
 import android.util.Log
 import android.util.Size
@@ -166,13 +167,13 @@ class CameraManipulator private constructor(builder: Builder) {
     fun start() {
         /** Quite a few operations such as UI manipulations in CameraCallback routines,
          *  TextureView adjustment need to run on main thread */
-//        startBackgroundThread()
+        startBackgroundThread()
         openCamera()
     }
 
     fun stop() {
         closeCamera()
-//        stopBackgroundThread()
+        stopBackgroundThread()
     }
 
     /**
@@ -184,13 +185,13 @@ class CameraManipulator private constructor(builder: Builder) {
         val permission = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
         if (permission != PackageManager.PERMISSION_GRANTED) {
             Log.w(TAG, "Camera permission hasn't been granted")
-            cameraCallback?.onCameraError(cameraId, PERMISSION_NOT_GRANTED)
+            handler.post { cameraCallback?.onCameraError(cameraId, PERMISSION_NOT_GRANTED) }
             return
         }
 
         if (!cameraManager.cameraIdList.contains(cameraId)) {
             Log.e(TAG, "Camera ID is invalid")
-            cameraCallback?.onCameraError(cameraId, CAMERA_ID_INVALID)
+            handler.post { cameraCallback?.onCameraError(cameraId, CAMERA_ID_INVALID) }
             return
         }
 
@@ -205,12 +206,12 @@ class CameraManipulator private constructor(builder: Builder) {
             return
         } catch (e: CameraAccessException) {
             Log.e(TAG, e.toString())
-            cameraCallback?.onCameraError(cameraId, CAMERA_ACCESS_EXCEPTION)
+            handler.post { cameraCallback?.onCameraError(cameraId, CAMERA_ACCESS_EXCEPTION) }
         } catch (e: NullPointerException) {
             // Currently an NPE is thrown when the Camera2API is used but not supported on the
             // device this code runs.
             Log.e(TAG, e.toString())
-            cameraCallback?.onCameraError(cameraId, CAMERA_API_NOT_SUPPORTED)
+            handler.post { cameraCallback?.onCameraError(cameraId, CAMERA_API_NOT_SUPPORTED) }
         }
     }
 
@@ -323,19 +324,19 @@ class CameraManipulator private constructor(builder: Builder) {
             val characteristics = cameraManager.getCameraCharacteristics(cameraId)
             val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
             if (map == null) {
-                cameraCallback?.onCameraError(cameraId, CAMERA_CHARACTERISTIC_FAILED)
+                handler.post { cameraCallback?.onCameraError(cameraId, CAMERA_CHARACTERISTIC_FAILED) }
                 return null
             }
 
             return map.getOutputSizes(SurfaceTexture::class.java)
         } catch (e: CameraAccessException) {
             Log.e(TAG, e.toString())
-            cameraCallback?.onCameraError(cameraId, CAMERA_ACCESS_EXCEPTION)
+            handler.post { cameraCallback?.onCameraError(cameraId, CAMERA_ACCESS_EXCEPTION) }
         } catch (e: NullPointerException) {
             // Currently an NPE is thrown when the Camera2API is used but not supported on the
             // device this code runs.
             Log.e(TAG, e.toString())
-            cameraCallback?.onCameraError(cameraId, CAMERA_API_NOT_SUPPORTED)
+            handler.post { cameraCallback?.onCameraError(cameraId, CAMERA_API_NOT_SUPPORTED) }
         }
 
         return null
@@ -351,12 +352,12 @@ class CameraManipulator private constructor(builder: Builder) {
             return characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: ERROR
         } catch (e: CameraAccessException) {
             Log.e(TAG, e.toString())
-            cameraCallback?.onCameraError(cameraId, CAMERA_ACCESS_EXCEPTION)
+            handler.post { cameraCallback?.onCameraError(cameraId, CAMERA_ACCESS_EXCEPTION) }
         } catch (e: NullPointerException) {
             // Currently an NPE is thrown when the Camera2API is used but not supported on the
             // device this code runs.
             Log.e(TAG, e.toString())
-            cameraCallback?.onCameraError(cameraId, CAMERA_API_NOT_SUPPORTED)
+            handler.post { cameraCallback?.onCameraError(cameraId, CAMERA_API_NOT_SUPPORTED) }
         }
 
         return ERROR
@@ -397,15 +398,19 @@ class CameraManipulator private constructor(builder: Builder) {
             additionalRotation, specificPreviewSize,
             lowerAreaRatio, upperAreaRatio
         )
-        cameraCallback?.onCameraPreviewSize(cameraId, previewSize)
-        // We fit the aspect ratio of TextureView to the size of preview we picked.
-        // Be mindful of that setAspectRatio->requestLayout->onMeasure(async) would be called later than
-        // configureTransform(). Thus configureTransform() must be called once again in onSurfaceTextureSizeChanged
-        // to make things right
-        if (context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
-            textureView?.setAspectRatio(previewSize.width, previewSize.height)
-        } else {
-            textureView?.setAspectRatio(previewSize.height, previewSize.width)
+
+        handler.post {
+            cameraCallback?.onCameraPreviewSize(cameraId, previewSize)
+
+            // We fit the aspect ratio of TextureView to the size of preview we picked.
+            // Be mindful of that setAspectRatio->requestLayout->onMeasure(async) would be called later than
+            // configureTransform(). Thus configureTransform() must be called once again in onSurfaceTextureSizeChanged
+            // to make things right
+            if (context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+                textureView?.setAspectRatio(previewSize.width, previewSize.height)
+            } else {
+                textureView?.setAspectRatio(previewSize.height, previewSize.width)
+            }
         }
     }
 
@@ -712,7 +717,7 @@ class CameraManipulator private constructor(builder: Builder) {
 
                         override fun onConfigureFailed(session: CameraCaptureSession) {
                             Log.e(TAG, "Failed to configure camera preview")
-                            cameraCallback?.onCameraError(cameraId, CAMERA_CONFIG_FAILED)
+                            handler.post { cameraCallback?.onCameraError(cameraId, CAMERA_CONFIG_FAILED) }
                         }
                     }, backgroundHandler
                 )
@@ -728,7 +733,7 @@ class CameraManipulator private constructor(builder: Builder) {
                 .get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL)
         } catch (e: CameraAccessException) {
             Log.e(TAG, e.toString())
-            cameraCallback?.onCameraError(cameraId, CAMERA_ACCESS_EXCEPTION)
+            handler.post { cameraCallback?.onCameraError(cameraId, CAMERA_ACCESS_EXCEPTION) }
         }
 
         return ERROR
@@ -741,7 +746,7 @@ class CameraManipulator private constructor(builder: Builder) {
 
         override fun onOpened(cameraDevice: CameraDevice) {
             Log.i(TAG, "Camera opened: $cameraId")
-            cameraCallback?.onCameraOpened(cameraId)
+            handler.post { cameraCallback?.onCameraOpened(cameraId) }
             cameraOpenCloseLock.release()
             this@CameraManipulator.cameraDevice = cameraDevice
 
@@ -765,7 +770,7 @@ class CameraManipulator private constructor(builder: Builder) {
             Log.i(TAG, "Camera disconnected: $cameraId")
             cameraOpenCloseLock.release()
             cameraDevice.close()
-            cameraCallback?.onCameraClosed(cameraId)
+            handler.post {cameraCallback?.onCameraClosed(cameraId)}
             this@CameraManipulator.cameraDevice = null
         }
 
@@ -956,6 +961,9 @@ class CameraManipulator private constructor(builder: Builder) {
 
         /** Denotes a function error */
         private const val ERROR = -1
+
+        /** Main thread looper handler */
+        private val handler = Handler(Looper.getMainLooper())
 
         /**
          * Given `choices` of `Size`s supported by a camera, the TextureView dimension and
