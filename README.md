@@ -6,7 +6,7 @@ render the preview frame on a TextureView, and obtain frame data
 
 Simply start camera preview and fetch frame data by:
 
- cameraManipulator =
+ cameraManipulator = 
             CameraManipulator.Builder()
                 .setClientContext(this).setCameraCallback(this)
                 .setRotation(windowManager.defaultDisplay.rotation).setCameraId(1)
