@@ -135,7 +135,7 @@ class MainActivity : AppCompatActivity(), CameraManipulator.CameraCallback, View
                 .setClientContext(this).setCameraCallback(this)
                 .setRotation(windowManager.defaultDisplay.rotation).setCameraId(1)
                     .setPreviewOn(textureView).setFrameDataCallback(this@MainActivity)
-                .setAdditionalRotation(CameraManipulator.ROTATION_90).setFlipOver(true).build()
+                /*.setAdditionalRotation(CameraManipulator.ROTATION_90).setFlipOver(true)*/.build()
         cameraManipulator?.start()
 
         // The camera had been stopped at onPause(), thus reset the states
