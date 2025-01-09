@@ -728,15 +728,14 @@ class CameraManipulator private constructor(builder: Builder) {
     }
 
     private fun getCameraHardwareLevel(): Int {
-        try {
-            return cameraManager.getCameraCharacteristics(cameraId)
-                .get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL)
+        return try {
+            cameraManager.getCameraCharacteristics(cameraId)
+                .get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL) ?: ERROR
         } catch (e: CameraAccessException) {
             Log.e(TAG, e.toString())
             handler.post { cameraCallback?.onCameraError(cameraId, CAMERA_ACCESS_EXCEPTION) }
+            ERROR
         }
-
-        return ERROR
     }
 
     /**
@@ -786,7 +785,7 @@ class CameraManipulator private constructor(builder: Builder) {
     private fun startBackgroundThread() {
         if (backgroundThread == null) {
             backgroundThread = HandlerThread("CameraBackground#${THREAD_NUM++}").also { it.start() }
-            backgroundHandler = Handler(backgroundThread?.looper)
+            backgroundHandler = Handler(backgroundThread!!.looper)
         }
     }
 

@@ -2,10 +2,13 @@ apply plugin: 'com.android.application'
 
 apply plugin: 'kotlin-android'
 
-apply plugin: 'kotlin-android-extensions'
+kotlin {
+    jvmToolchain 11
+}
 
 android {
-    compileSdkVersion 28
+    namespace "com.zbx.cameramodule"
+    compileSdk 30
     defaultConfig {
         applicationId "com.zbx.cameramodule"
         minSdkVersion 22
